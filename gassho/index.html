@@ -1,0 +1,852 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>gassho 合書 – ふたりで書く</title>
+<style>
+  :root { --bg:#0e0d0c; --panel:rgba(22,20,18,.84); --fg:#efe9df; --mute:#9a9286; --acc:#d63a24; }
+  * { box-sizing:border-box; }
+  html,body { margin:0; height:100%; background:var(--bg); color:var(--fg); overflow:hidden;
+    font-family:-apple-system,BlinkMacSystemFont,"Hiragino Mincho ProN","Yu Mincho","Noto Serif JP",serif; }
+  #stage { position:fixed; inset:0; display:flex; align-items:center; justify-content:center; }
+  #cv { max-width:100%; max-height:100%; }
+  #gl { position:fixed; inset:0; width:100%; height:100%; touch-action:none; }
+  video { display:none; }
+  #start { position:fixed; inset:0; display:flex; flex-direction:column; gap:16px; overflow:auto;
+    align-items:center; justify-content:center; text-align:center; padding:24px; z-index:6; background:var(--bg); }
+  #start h1 { margin:0; font-size:44px; font-weight:600; letter-spacing:.2em; }
+  #start h1 small { display:block; font-size:14px; letter-spacing:.3em; color:var(--mute); font-weight:400; margin-top:4px; }
+  #start p { margin:0; color:var(--mute); line-height:1.9; max-width:440px; font-size:14px; }
+  #start .how { color:var(--fg); font-size:15px; }
+  .ui, button, select, input { font-family:-apple-system,BlinkMacSystemFont,"Hiragino Sans","Noto Sans JP",sans-serif; }
+  button, select, input { font-size:14px; color:var(--fg); background:#2a2622; border:1px solid #403a33; border-radius:10px; padding:9px 13px; }
+  input { width:150px; text-align:center; letter-spacing:.2em; font-size:16px; }
+  button.primary { background:var(--acc); color:#fff; border:none; font-weight:700; padding:11px 22px; letter-spacing:.08em; }
+  button.ghost { background:transparent; border:1px solid var(--acc); color:var(--fg); font-weight:700; padding:11px 22px; letter-spacing:.08em; }
+  .modes { display:flex; gap:12px; flex-wrap:wrap; justify-content:center; }
+  .modes button { padding:13px 26px; font-size:16px; }
+  #duoPanel { display:flex; flex-direction:column; gap:12px; align-items:center; padding:16px 18px;
+    border:1px solid #403a33; border-radius:14px; }
+  #duoPanel .row { display:flex; gap:8px; align-items:center; }
+  #duoPanel small { color:var(--mute); font-size:12px; }
+  button:active { transform:scale(.97); }
+  button:disabled { opacity:.5; }
+  .bar { position:fixed; left:50%; bottom:max(14px, env(safe-area-inset-bottom)); transform:translateX(-50%);
+    display:flex; flex-wrap:wrap; gap:8px; align-items:center; justify-content:center;
+    background:var(--panel); backdrop-filter:blur(10px); -webkit-backdrop-filter:blur(10px);
+    padding:10px 12px; border-radius:16px; width:min(96vw, 780px); z-index:4; }
+  .bar label { display:flex; align-items:center; gap:6px; color:var(--mute); font-size:13px; }
+  .bar input[type=range] { width:90px; accent-color:var(--acc); padding:0; }
+  .bar input[type=checkbox] { width:auto; padding:0; }
+  #status { position:fixed; top:max(10px, env(safe-area-inset-top)); left:12px; font-size:12px;
+    color:var(--mute); background:var(--panel); padding:5px 9px; border-radius:8px; z-index:4; }
+  #room { position:fixed; top:max(10px, env(safe-area-inset-top)); right:12px; font-size:12px; z-index:4;
+    background:var(--panel); padding:5px 6px 5px 10px; border-radius:8px; display:flex; gap:8px; align-items:center; max-width:60vw; }
+  #room button { font-size:12px; padding:5px 9px; }
+  #timer { position:fixed; top:max(14px, env(safe-area-inset-top)); left:50%; transform:translateX(-50%);
+    font-size:40px; font-weight:600; letter-spacing:.05em; z-index:5; text-shadow:0 2px 12px rgba(0,0,0,.6);
+    pointer-events:none; }
+  #timer.big { top:50%; transform:translate(-50%,-50%); font-size:120px; }
+  #hint { position:fixed; top:max(64px, calc(env(safe-area-inset-top) + 54px)); left:50%; transform:translateX(-50%);
+    font-size:13px; color:var(--mute); background:var(--panel); padding:6px 12px; border-radius:10px; z-index:4; white-space:nowrap; }
+  #toast { position:fixed; left:50%; top:40%; transform:translateX(-50%); background:var(--panel); padding:10px 16px;
+    border-radius:10px; font-size:14px; z-index:7; }
+  .hidden { display:none !important; }
+</style>
+<script type="importmap">
+{ "imports": {
+  "three": "https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.js",
+  "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/"
+} }
+</script>
+<script src="https://cdn.jsdelivr.net/npm/peerjs@1.5.4/dist/peerjs.min.js"></script>
+</head>
+<body>
+<div id="start">
+  <h1>合書<small>GASSHO</small></h1>
+  <p class="how">離れたふたりが、同じ空間に同時に書く。<br>五本の指先がふちになる、丸い筆。<br>指を広げると太く、すぼめると細く。グーで筆が上がる。<br>ふたりの線は音になって重なり、<br>十五秒後に、ひとつの立体になる。</p>
+  <div id="duoPanel" class="ui">
+    <button class="primary" id="host">部屋をつくる</button>
+    <small>または、相手の部屋番号を入れて</small>
+    <div class="row"><input id="code" inputmode="numeric" maxlength="4" placeholder="4桁の番号"><button id="join">部屋に入る</button></div>
+  </div>
+  <p>音が出ます。カメラの映像は端末の中だけで処理され、送信されません。<br>相手に送るのは、筆の位置と太さと色だけです。</p>
+  <p id="err" class="ui" style="color:#fca5a5"></p>
+</div>
+
+<div id="stage"><canvas id="cv"></canvas></div>
+<canvas id="gl" class="hidden"></canvas>
+<video id="video" playsinline muted></video>
+<div id="status" class="ui hidden">読み込み中…</div>
+<div id="room" class="ui hidden"><span id="roomTxt"></span><button id="invite" class="hidden">招待リンク</button></div>
+<div id="timer" class="hidden"></div>
+<div id="hint" class="ui hidden">ドラッグで回転・ピンチで拡大</div>
+<div id="toast" class="ui hidden"></div>
+
+<div id="barCam" class="bar ui hidden">
+  <select id="ink" title="墨の色">
+    <option value="244,238,226">白墨</option>
+    <option value="18,16,14">墨</option>
+    <option value="214,58,36">朱</option>
+    <option value="212,172,70">金</option>
+    <option value="52,86,170">藍</option>
+  </select>
+  <label><input id="sound" type="checkbox" checked> 音</label>
+  <label><input id="showVideo" type="checkbox" checked> 映像</label>
+  <label><input id="showSkel" type="checkbox"> 骨格</label>
+  <button id="flip">🔄 カメラ切替</button>
+  <button id="rec" class="primary">書き始める（15秒）</button>
+</div>
+
+<div id="barView" class="bar ui hidden">
+  <select id="ink3" title="自分の墨の色">
+    <option value="244,238,226">白墨</option>
+    <option value="18,16,14">墨</option>
+    <option value="214,58,36">朱</option>
+    <option value="212,172,70">金</option>
+    <option value="52,86,170">藍</option>
+  </select>
+  <label>奥行き <input id="depth" type="range" min="0" max="40" value="15"></label>
+  <label><input id="autoRot" type="checkbox" checked> 自動回転</label>
+  <button id="front">正面</button>
+  <button id="save">📷 保存</button>
+  <button id="again" class="primary">もう一度書く</button>
+</div>
+
+<script type="module">
+import * as THREE from "three";
+import { OrbitControls } from "three/addons/controls/OrbitControls.js";
+import { FilesetResolver, HandLandmarker } from "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14/vision_bundle.mjs";
+
+const $ = id => document.getElementById(id);
+const video = $("video"), cv = $("cv"), ctx = cv.getContext("2d");
+const statusEl = $("status"), timerEl = $("timer");
+const CONNECTIONS = HandLandmarker.HAND_CONNECTIONS;
+const TIPS = [4, 8, 12, 16, 20];
+const FINGERS = [[8, 5], [12, 9], [16, 13], [20, 17]];    // [tip, knuckle] for index..pinky
+const HAIRS = 64;                            // hairs in the round brush (2D)
+const HAIRS3 = 40;                           // hairs around the tube (3D)
+const GAP_MS = 500;                          // tracking may drop out this long without breaking the line
+const REC_SEC = 15;
+const INKS = ["244,238,226", "18,16,14", "214,58,36", "212,172,70", "52,86,170"];
+
+let landmarker = null, stream = null, facing = "user", lastVideoTime = -1;
+let mode = "idle";                           // idle | ready | count | rec | view
+let modeT0 = 0;
+let lastHands = [];
+const ink = document.createElement("canvas"), ictx = ink.getContext("2d");
+const live = new Map();                      // my hands
+const peerLive = new Map();                  // partner's hands
+let strokes = [];                            // recorded strokes for 3D: {samples, seed, who, col}
+let strokeCounter = 0;
+
+const clamp = (v, a, b) => Math.min(b, Math.max(a, v));
+const smooth = (a, b, x) => { const t = clamp((x - a) / (b - a), 0, 1); return t * t * (3 - 2 * t); };
+const lerp = (a, b, t) => a.map((v, k) => v + (b[k] - v) * t);
+const centroid = pts => pts[0].map((_, k) => pts.reduce((s, p) => s + p[k], 0) / pts.length);
+const dist = (a, b) => Math.hypot(...a.map((v, k) => v - b[k]));
+const r3n = v => Math.round(v * 1e4) / 1e4;
+
+function toast(msg) {
+  const t = $("toast"); t.textContent = msg; t.classList.remove("hidden");
+  clearTimeout(toast.h); toast.h = setTimeout(() => t.classList.add("hidden"), 1800);
+}
+// partner's colour: theirs, unless it's the same as mine — then pick another so the two lines stay apart
+function peerColor(c) {
+  const mine = $("ink").value;
+  if (c !== mine) return c;
+  return INKS.find(x => x !== mine && x !== "18,16,14") || INKS[2];
+}
+
+// ======================================================================
+// sound — ambient. Each brush hums a soft pad on a shared pentatonic scale (so two people always
+// harmonise): height → note, width → volume, left/right → pan, speed → brightness, kasure → a breath
+// of air. Moving to a new note rings a quiet glass chime. A low drone holds the two voices together,
+// and everything sits in a long reverb.
+// ======================================================================
+let ac = null, master = null, verb = null, noiseBuf = null, drone = null;
+const voices = new Map();
+const SCALE = [0, 2, 4, 7, 9];               // major pentatonic: no two notes clash
+function impulse(sec, decay) {
+  const len = Math.floor(ac.sampleRate * sec), buf = ac.createBuffer(2, len, ac.sampleRate);
+  for (let c = 0; c < 2; c++) {
+    const d = buf.getChannelData(c);
+    for (let i = 0; i < len; i++) d[i] = (Math.random() * 2 - 1) * (1 - i / len) ** decay;
+  }
+  return buf;
+}
+function audioInit() {
+  if (!ac) {
+    const AC = window.AudioContext || window.webkitAudioContext;
+    if (!AC) return;
+    ac = new AC();
+    const tone = ac.createBiquadFilter(); tone.type = "lowpass"; tone.frequency.value = 3800;
+    const comp = ac.createDynamicsCompressor(); comp.threshold.value = -20; comp.ratio.value = 3;
+    master = ac.createGain(); master.gain.value = 0.8;
+    master.connect(tone).connect(comp).connect(ac.destination);
+    const conv = ac.createConvolver(); conv.buffer = impulse(4.5, 2.6);
+    verb = ac.createGain(); verb.gain.value = 0.7;
+    verb.connect(conv).connect(master);
+    noiseBuf = ac.createBuffer(1, ac.sampleRate * 2, ac.sampleRate);
+    const d = noiseBuf.getChannelData(0); for (let i = 0; i < d.length; i++) d[i] = Math.random() * 2 - 1;
+  }
+  if (ac.state === "suspended") ac.resume();
+}
+const hz = midi => 440 * 2 ** ((midi - 69) / 12);
+function noteFor(yNorm, who) {
+  const idx = Math.round((1 - clamp(yNorm, 0, 1)) * 11);
+  const base = who === "me" ? 50 : 62;       // D3 / D4 — the partner sings an octave above
+  return base + 12 * Math.floor(idx / 5) + SCALE[idx % 5];
+}
+function makeVoice(who) {
+  const v = { who, t: 0, note: null, lastChime: 0 };
+  v.out = ac.createGain(); v.out.gain.value = 0;
+  v.pan = ac.createStereoPanner ? ac.createStereoPanner() : null;
+  v.lp = ac.createBiquadFilter(); v.lp.type = "lowpass"; v.lp.frequency.value = 900; v.lp.Q.value = 0.3;
+  // a few soft sines, slightly detuned against each other so the pad breathes
+  const parts = who === "me"
+    ? [[1, -7, 0.32], [1, 7, 0.32], [0.5, 0, 0.22], [1.5, 3, 0.07]]
+    : [[1, -5, 0.3], [1, 5, 0.3], [2, 0, 0.06], [0.5, 0, 0.1]];
+  const lfo = ac.createOscillator(); lfo.frequency.value = 0.18 + Math.random() * 0.1;
+  const lfoAmt = ac.createGain(); lfoAmt.gain.value = 4; lfo.connect(lfoAmt); lfo.start();
+  v.oscs = parts.map(([ratio, det, amp]) => {
+    const o = ac.createOscillator(), g = ac.createGain();
+    o.type = "sine"; o.detune.value = det; g.gain.value = amp;
+    lfoAmt.connect(o.detune);
+    o.connect(g).connect(v.lp); o.start();
+    return { o, ratio };
+  });
+  // breath of air for kasure
+  const nz = ac.createBufferSource(); nz.buffer = noiseBuf; nz.loop = true;
+  const bp = ac.createBiquadFilter(); bp.type = "bandpass"; bp.frequency.value = 1400; bp.Q.value = 0.5;
+  v.ng = ac.createGain(); v.ng.gain.value = 0;
+  nz.connect(bp).connect(v.ng).connect(v.out); nz.start();
+  v.lp.connect(v.out);
+  const tail = v.pan ? (v.out.connect(v.pan), v.pan) : v.out;
+  const dryG = ac.createGain(); dryG.gain.value = 0.55;
+  tail.connect(dryG).connect(master); tail.connect(verb);
+  return v;
+}
+function chime(midi, pan, who) {             // quiet glass bell, mostly heard through the reverb
+  const t = ac.currentTime, f = hz(midi + 12);
+  const g = ac.createGain(); g.gain.setValueAtTime(0, t);
+  g.gain.linearRampToValueAtTime(who === "me" ? 0.045 : 0.035, t + 0.015);
+  g.gain.exponentialRampToValueAtTime(0.0001, t + 3);
+  const p = ac.createStereoPanner ? ac.createStereoPanner() : null;
+  [[1, 1], [2.76, 0.18], [5.4, 0.05]].forEach(([r, a]) => {   // bell-like inharmonic partials
+    const o = ac.createOscillator(), og = ac.createGain();
+    o.type = "sine"; o.frequency.value = f * r; og.gain.value = a;
+    o.connect(og).connect(g); o.start(t); o.stop(t + 3.1);
+  });
+  if (p) { p.pan.value = pan; g.connect(p); p.connect(verb); p.connect(master); }
+  else { g.connect(verb); g.connect(master); }
+}
+function sing(key, who, on, x, y, r, dry, speed) {
+  if (!ac) return;
+  if (!$("sound").checked) on = false;
+  let v = voices.get(key);
+  if (!v) { if (!on) return; v = makeVoice(who); voices.set(key, v); }
+  const now = ac.currentTime, pan = clamp(x * 2 - 1, -1, 1) * 0.7;
+  v.t = performance.now();
+  const note = noteFor(y, who);
+  if (note !== v.note) {
+    for (const { o, ratio } of v.oscs) o.frequency.setTargetAtTime(hz(note) * ratio, now, v.note == null ? 0.001 : 0.12);
+    if (on && v.note != null && v.t - v.lastChime > 180) { chime(note, pan, who); v.lastChime = v.t; }
+    v.note = note;
+  }
+  v.lp.frequency.setTargetAtTime(700 + 1600 * clamp(speed, 0, 1), now, 0.2);
+  if (v.pan) v.pan.pan.setTargetAtTime(pan, now, 0.2);
+  const vol = on ? 0.05 + 0.13 * smooth(0, 0.22, r) : 0;
+  v.out.gain.setTargetAtTime(vol, now, on ? 0.35 : 0.9);     // slow swell in, long fade out
+  v.ng.gain.setTargetAtTime(on ? 0.05 * dry : 0, now, 0.2);
+}
+function hushStale() {                       // let voices fade when their brush disappears
+  if (!ac) return;
+  const now = performance.now();
+  for (const v of voices.values()) if (now - v.t > 200) v.out.gain.setTargetAtTime(0, ac.currentTime, 0.9);
+}
+function hushAll() { if (ac) for (const v of voices.values()) v.out.gain.setTargetAtTime(0, ac.currentTime, 1.2); }
+function droneOn() {                         // low D and A underneath, holding the two voices together
+  if (!ac || !$("sound").checked || drone) return;
+  const t = ac.currentTime, g = ac.createGain(), lp = ac.createBiquadFilter();
+  lp.type = "lowpass"; lp.frequency.value = 400;
+  g.gain.setValueAtTime(0, t); g.gain.linearRampToValueAtTime(0.06, t + 3);
+  const oscs = [38, 45, 50].map((m, i) => {
+    const o = ac.createOscillator(); o.type = "sine"; o.frequency.value = hz(m); o.detune.value = (i - 1) * 4;
+    o.connect(lp); o.start(t); return o;
+  });
+  lp.connect(g); g.connect(master); g.connect(verb);
+  drone = { g, oscs };
+}
+function droneOff() {
+  if (!drone) return;
+  const t = ac.currentTime, d = drone; drone = null;
+  d.g.gain.cancelScheduledValues(t); d.g.gain.setValueAtTime(d.g.gain.value, t);
+  d.g.gain.linearRampToValueAtTime(0, t + 4);
+  d.oscs.forEach(o => o.stop(t + 4.2));
+}
+function chord() {                           // a slow, open closing chord when the 15 seconds end
+  if (!ac || !$("sound").checked) return;
+  const t = ac.currentTime;
+  [50, 57, 62, 64, 69, 74].forEach((m, i) => {
+    const o = ac.createOscillator(), g = ac.createGain();
+    o.type = "sine"; o.frequency.value = hz(m);
+    const at = t + i * 0.12;
+    g.gain.setValueAtTime(0, t); g.gain.setValueAtTime(0, at);
+    g.gain.linearRampToValueAtTime(0.05, at + 0.6);
+    g.gain.exponentialRampToValueAtTime(0.0001, at + 6.5);
+    o.connect(g); g.connect(master); g.connect(verb); o.start(t); o.stop(at + 6.6);
+  });
+}
+
+// ======================================================================
+// two people: a direct phone-to-phone link (PeerJS). Only brush position/size/colour is sent.
+// ======================================================================
+let peer = null, conn = null, roomCode = null, isHost = false;
+function roomUI(text) {
+  $("room").classList.remove("hidden");
+  $("roomTxt").textContent = (roomCode ? `部屋 ${roomCode}・` : "") + text;
+  $("invite").classList.toggle("hidden", !(isHost && roomCode && !(conn && conn.open)));
+}
+function send(m) { if (conn && conn.open) { try { conn.send(m); } catch {} } }
+function setupHost() {
+  isHost = true;
+  const code = String(1000 + Math.floor(Math.random() * 9000));
+  peer = new Peer("gassho-room-" + code, { debug: 0 });
+  roomUI("準備中…");
+  peer.on("open", () => { roomCode = code; roomUI("相手を待っています"); });
+  peer.on("connection", c => {
+    if (conn && conn.open) { c.on("open", () => c.close()); return; }
+    attach(c);
+  });
+  peer.on("disconnected", () => { try { peer.reconnect(); } catch {} });
+  peer.on("error", e => {
+    if (e.type === "unavailable-id") { peer.destroy(); setupHost(); }
+    else roomUI("通信エラー（" + e.type + "）");
+  });
+}
+function setupJoin(code) {
+  isHost = false; roomCode = code;
+  peer = new Peer({ debug: 0 });
+  roomUI("つないでいます…");
+  peer.on("open", () => attach(peer.connect("gassho-room-" + code, { serialization: "json" })));
+  peer.on("error", e => roomUI(e.type === "peer-unavailable" ? "部屋が見つかりません" : "通信エラー（" + e.type + "）"));
+}
+function attach(c) {
+  conn = c;
+  const timer = setTimeout(() => {
+    if (!c.open) roomUI("つながりませんでした。二人とも同じWi-Fiにつないで、もう一度試してください");
+  }, 15000);
+  c.on("open", () => { clearTimeout(timer); roomUI("相手とつながりました ♪"); toast("相手とつながりました"); });
+  c.on("data", onMsg);
+  c.on("close", () => { if (conn === c) conn = null; peerLive.clear(); roomUI(isHost ? "相手が抜けました。待っています" : "相手が抜けました"); });
+  c.on("error", () => {});
+}
+$("invite").onclick = async () => {
+  const url = location.origin + location.pathname + "?room=" + roomCode;
+  try {
+    if (navigator.share) await navigator.share({ title: "合書：いっしょに書こう", text: "部屋 " + roomCode + " で一緒に書こう", url });
+    else { await navigator.clipboard.writeText(url); toast("招待リンクをコピーしました"); }
+  } catch {}
+};
+function onMsg(m) {
+  if (!m || typeof m !== "object") return;
+  if (m.t === "start") remoteStart();
+  else if (m.t === "b") onPeerBrush(m);
+}
+
+// ======================================================================
+// model & camera
+// ======================================================================
+async function loadModel() {
+  const fs = await FilesetResolver.forVisionTasks("https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14/wasm");
+  const opts = (delegate) => ({
+    baseOptions: { modelAssetPath: "https://storage.googleapis.com/mediapipe-models/hand_landmarker/hand_landmarker/float16/1/hand_landmarker.task", delegate },
+    runningMode: "VIDEO", numHands: 2,
+    minHandDetectionConfidence: 0.4, minHandPresenceConfidence: 0.3, minTrackingConfidence: 0.3,  // hold on through motion blur
+  });
+  try { landmarker = await HandLandmarker.createFromOptions(fs, opts("GPU")); }
+  catch { landmarker = await HandLandmarker.createFromOptions(fs, opts("CPU")); }
+}
+async function startCamera() {
+  stopCamera();
+  stream = await navigator.mediaDevices.getUserMedia({
+    video: { facingMode: facing, width: { ideal: 1280 }, height: { ideal: 720 }, frameRate: { ideal: 60 } }, audio: false });
+  video.srcObject = stream;
+  await video.play();
+  cv.width = ink.width = video.videoWidth; cv.height = ink.height = video.videoHeight;
+  lastVideoTime = -1;
+}
+function stopCamera() { if (stream) stream.getTracks().forEach(t => t.stop()); stream = null; }
+
+function setMode(m) {
+  mode = m; modeT0 = performance.now();
+  const view = m === "view";
+  $("stage").classList.toggle("hidden", view);
+  $("gl").classList.toggle("hidden", !view);
+  $("hint").classList.toggle("hidden", !view);
+  $("barView").classList.toggle("hidden", !view);
+  $("barCam").classList.toggle("hidden", view);
+  statusEl.classList.toggle("hidden", view);
+  timerEl.classList.toggle("hidden", !(m === "count" || m === "rec"));
+  timerEl.classList.toggle("big", m === "count");
+  for (const id of ["rec", "flip"]) $(id).disabled = m === "count" || m === "rec";
+}
+
+async function startApp(kind, code) {
+  $("err").textContent = "";
+  for (const id of ["host", "join"]) $(id).disabled = true;
+  audioInit();                               // must happen inside the tap
+  try {
+    statusEl.classList.remove("hidden");
+    await Promise.all([loadModel(), startCamera()]);
+    $("start").classList.add("hidden");
+    setMode("ready");
+    if (kind === "host") setupHost();
+    if (kind === "join") setupJoin(code);
+    requestAnimationFrame(loop);
+  } catch (e) {
+    console.error(e);
+    $("err").textContent = "起動できませんでした：" + (e.name === "NotAllowedError" ? "カメラの使用を許可してください。" : e.message);
+    for (const id of ["host", "join"]) $(id).disabled = false;
+  }
+}
+$("host").onclick = () => startApp("host");
+$("join").onclick = () => {
+  const code = $("code").value.replace(/\D/g, "");
+  if (code.length !== 4) { $("err").textContent = "4桁の部屋番号を入れてください"; return; }
+  startApp("join", code);
+};
+{ // opened from an invite link
+  const r = new URLSearchParams(location.search).get("room");
+  if (r && /^\d{4}$/.test(r)) $("code").value = r;
+}
+$("flip").onclick = async () => {
+  facing = facing === "user" ? "environment" : "user";
+  try { await startCamera(); } catch { facing = facing === "user" ? "environment" : "user"; await startCamera(); }
+};
+
+function beginCount(fromRemote) {
+  if (mode === "count" || mode === "rec") return;
+  audioInit();
+  ictx.clearRect(0, 0, ink.width, ink.height);
+  live.clear(); peerLive.clear(); strokes = [];
+  setMode("count");
+  if (!fromRemote) send({ t: "start" });
+}
+$("rec").onclick = () => beginCount(false);
+async function backToCamera() {
+  clearScene();
+  setMode("ready");
+  try { await startCamera(); requestAnimationFrame(loop); }
+  catch (e) { statusEl.textContent = "カメラを起動できませんでした"; }
+}
+$("again").onclick = backToCamera;
+async function remoteStart() {             // partner pressed start
+  if (mode === "view") await backToCamera();
+  if (mode === "ready") { beginCount(true); toast("相手が書き始めました"); }
+}
+
+// ======================================================================
+// reading my hand
+// ======================================================================
+// Brush = a circle around the five fingertips: centre = their centre, radius = their spread.
+function readHand(lm, W, H, mirror, prevDepth) {
+  const P = i => [(mirror ? 1 - lm[i].x : lm[i].x) * W, lm[i].y * H];
+  const tips2 = TIPS.map(P);
+  const c2 = centroid(tips2);
+  const handPx = Math.max(4, dist(P(0), P(9)));
+  const spread = Math.sqrt(tips2.reduce((s, p) => s + (p[0] - c2[0]) ** 2 + (p[1] - c2[1]) ** 2, 0) / 5);
+  // fingertips can't fully touch, so take a little off: pinched fingers → a hairline
+  const r2 = Math.max(1, spread - 0.09 * handPx);
+
+  // distance from camera, estimated from how big the hand looks
+  const handSize = handPx / H;
+  const raw = 0.2 / handSize;
+  const d = prevDepth == null ? raw : prevDepth * 0.8 + raw * 0.2;
+  const zRel = TIPS.reduce((s, i) => s + lm[i].z, 0) / 5;
+  const c3 = [(c2[0] - W / 2) / H * d, -(c2[1] - H / 2) / H * d, -(d + zRel * (W / H) * d)];
+  const r3 = r2 / H * d;
+
+  // fist: fingertips folded back into the palm (closer to the wrist than barely past the knuckles).
+  // Pinched fingers keep their tips well beyond the knuckles, so they still count as writing.
+  const L = i => [lm[i].x, lm[i].y, lm[i].z];
+  const curled = FINGERS.filter(([t, k]) => dist(L(t), L(0)) < dist(L(k), L(0)) * 1.15).length;
+  return { tips2, c2, r2, c3, r3, d, curled };
+}
+
+function updateHand(key, h, now) {
+  let s = live.get(key);
+  if (!s || now - s.t > GAP_MS) {
+    s = { t: now, d: h.d, v: 0, fist: h.curled >= 3, hist: [], stroke: null, id: null, hairs: newHairs(),
+          c2: h.c2, r2: h.r2, c3: h.c3, r3: h.r3, tips2: h.tips2 };
+    live.set(key, s);
+  }
+  if (h.curled >= 3) s.fist = true; else if (h.curled <= 1) s.fist = false;   // hysteresis
+
+  const dt = Math.max(1, now - s.t);
+  const c2 = lerp(s.c2, h.c2, 0.7), c3 = lerp(s.c3, h.c3, 0.7);
+  const r2 = s.r2 * 0.55 + h.r2 * 0.45, r3 = s.r3 * 0.55 + h.r3 * 0.45;
+  const v = dist(c2, s.c2) / cv.width / (dt / 1000);
+  s.v = s.v * 0.5 + v * 0.5;
+  const dry = 0.85 * smooth(0.4, 1.8, s.v);  // fast → kasure (capped so the core hairs always keep ink and the line never breaks)
+  const wet = 1 - smooth(0.03, 0.28, s.v);   // slow → nijimi
+  Object.assign(s, { t: now, d: h.d, c2, r2, c3, r3, tips2: h.tips2 });
+
+  const W = cv.width, H = cv.height, col = $("ink").value;
+  const writing = !s.fist && mode === "rec";
+  if (!writing) { s.stroke = null; s.id = null; s.hist = []; }
+  else {
+    if (!s.stroke) {
+      s.id = ++strokeCounter; s.hairs = newHairs();
+      s.stroke = { samples: [], seed: Math.random() * 1000, who: "me", col }; strokes.push(s.stroke);
+    }
+    s.hist.push({ c: c2, r: r2 }); if (s.hist.length > 3) s.hist.shift();
+    paint2D(s, dry, wet, col);
+    s.stroke.samples.push({ c: c3.slice(), r: r3, dry, wet });
+  }
+  sing("me:" + key, "me", writing, c2[0] / W, c2[1] / H, r2 / H, dry, s.v);
+  send({ t: "b", k: key, id: s.id, c: [r3n(c2[0] / W), r3n(c2[1] / H)], r: r3n(r2 / H),
+         c3: c3.map(r3n), r3: r3n(r3), dry: r3n(dry), wet: r3n(wet), v: r3n(s.v), col });
+}
+
+// partner's brush arrives in screen-relative units; drawn onto my canvas in their colour
+function onPeerBrush(m) {
+  const W = cv.width, H = cv.height, now = performance.now();
+  const c2 = [m.c[0] * W, m.c[1] * H], r2 = m.r * H, col = peerColor(m.col);
+  let s = peerLive.get(m.k);
+  if (!s) { s = { hist: [], id: null }; peerLive.set(m.k, s); }
+  Object.assign(s, { c2, r2, t: now, fist: m.id == null, col });
+  const writing = mode === "rec" && m.id != null;
+  if (!writing) { s.id = null; s.hist = []; }
+  else {
+    if (s.id !== m.id) {
+      s.id = m.id; s.hist = []; s.hairs = newHairs();
+      s.stroke = { samples: [], seed: Math.random() * 1000, who: "peer", col }; strokes.push(s.stroke);
+    }
+    s.hist.push({ c: c2, r: r2 }); if (s.hist.length > 3) s.hist.shift();
+    paint2D(s, m.dry, m.wet, col);
+    s.stroke.samples.push({ c: m.c3, r: m.r3, dry: m.dry, wet: m.wet });
+  }
+  sing("peer:" + m.k, "peer", writing, m.c[0], m.c[1], m.r, m.dry, m.v);
+}
+
+function newHairs() {                        // hairs spread over a unit disk
+  return Array.from({ length: HAIRS }, () => {
+    const rho = Math.sqrt(Math.random()), th = Math.random() * Math.PI * 2;
+    return { x: rho * Math.cos(th), y: rho * Math.sin(th), rho, load: 0.3 + Math.random() * 0.7 };
+  });
+}
+
+// ======================================================================
+// 2D ink while writing
+// ======================================================================
+const mid = (a, b) => ({ c: lerp(a.c, b.c, 0.5), r: (a.r + b.r) / 2 });
+function paint2D(s, dry, wet, col) {
+  const H = s.hist, n = H.length, g = ictx;
+  if (n < 2) { blot(g, col, H[0].c[0], H[0].c[1], H[0].r * 1.1 + 3, 0.12); return; }
+  // smooth curve through the samples: from the previous midpoint to the next, bending at the sample
+  const A = n === 2 ? H[0] : mid(H[0], H[1]), C = H[n - 2], B = mid(H[n - 2], H[n - 1]);
+  const at = (q, h) => [q.c[0] + h.x * q.r, q.c[1] + h.y * q.r];
+  g.lineCap = "round";
+  g.lineWidth = Math.max(1, Math.min(2 * C.r, (2 * C.r / Math.sqrt(HAIRS)) * (dry > 0.4 ? 1.4 : 2.2)));
+  for (const h of s.hairs) {
+    const inkAmt = h.load * (1 - 0.45 * h.rho) + (Math.random() - 0.5) * 0.1;
+    if (inkAmt < dry * 0.9) continue;
+    const a = (0.5 + 0.45 * Math.min(1, inkAmt)) * (1 - 0.35 * dry);
+    const [ax, ay] = at(A, h), [cx, cy] = at(C, h), [bx, by] = at(B, h);
+    g.strokeStyle = `rgba(${col},${a.toFixed(3)})`;
+    g.beginPath(); g.moveTo(ax, ay); g.quadraticCurveTo(cx, cy, bx, by); g.stroke();
+  }
+  if (wet > 0.03) {
+    const r = B.r * (1 + 1.2 * wet) + 1.5;
+    blot(g, col, B.c[0], B.c[1], r, 0.08 * wet);
+    for (let i = 0; i < 2; i++) {
+      const ang = Math.random() * Math.PI * 2;
+      blot(g, col, B.c[0] + Math.cos(ang) * r * 0.7, B.c[1] + Math.sin(ang) * r * 0.7, r * 0.4, 0.06 * wet);
+    }
+  }
+}
+function blot(g, col, x, y, r, a) {
+  const gr = g.createRadialGradient(x, y, 0, x, y, r);
+  gr.addColorStop(0, `rgba(${col},${a})`);
+  gr.addColorStop(0.55, `rgba(${col},${a * 0.6})`);
+  gr.addColorStop(1, `rgba(${col},0)`);
+  g.fillStyle = gr; g.beginPath(); g.arc(x, y, r, 0, Math.PI * 2); g.fill();
+}
+
+// ======================================================================
+// camera-phase render loop
+// ======================================================================
+function drawBrushRing(s, sc, color) {
+  ctx.lineWidth = 1.6 * sc;
+  ctx.strokeStyle = s.fist ? `rgba(${color},.4)` : `rgba(${color},.8)`;
+  ctx.setLineDash(s.fist ? [6 * sc, 6 * sc] : []);
+  ctx.beginPath(); ctx.arc(s.c2[0], s.c2[1], Math.max(2, s.r2), 0, Math.PI * 2); ctx.stroke();
+  ctx.setLineDash([]);
+}
+function compose(now) {
+  const W = cv.width, H = cv.height, mirror = facing === "user", sc = W / 1280;
+  ctx.fillStyle = "#0e0d0c"; ctx.fillRect(0, 0, W, H);
+  if ($("showVideo").checked) {
+    ctx.save();
+    if (mirror) { ctx.translate(W, 0); ctx.scale(-1, 1); }
+    ctx.drawImage(video, 0, 0, W, H);
+    ctx.restore();
+  }
+  ctx.drawImage(ink, 0, 0);
+  if ($("showSkel").checked) {
+    ctx.strokeStyle = "rgba(255,255,255,.6)"; ctx.lineWidth = 2 * sc;
+    for (const lm of lastHands) {
+      const P = p => [(mirror ? 1 - p.x : p.x) * W, p.y * H];
+      for (const c of CONNECTIONS) {
+        const [x1, y1] = P(lm[c.start]), [x2, y2] = P(lm[c.end]);
+        ctx.beginPath(); ctx.moveTo(x1, y1); ctx.lineTo(x2, y2); ctx.stroke();
+      }
+    }
+  }
+  for (const s of live.values()) {
+    if (now - s.t > 150) continue;
+    drawBrushRing(s, sc, "255,255,255");
+    ctx.fillStyle = "rgba(255,255,255,.85)";
+    for (const p of s.tips2) { ctx.beginPath(); ctx.arc(p[0], p[1], 3 * sc, 0, 7); ctx.fill(); }
+  }
+  for (const s of peerLive.values()) if (now - s.t < 250) drawBrushRing(s, sc, s.col);
+}
+
+function loop() {
+  if (mode === "view" || mode === "idle") return;
+  const now = performance.now();
+  if (mode === "count") {
+    const left = 3 - Math.floor((now - modeT0) / 1000);
+    timerEl.textContent = left;
+    if (left <= 0) { live.clear(); peerLive.clear(); setMode("rec"); droneOn(); }
+  } else if (mode === "rec") {
+    const left = Math.max(0, REC_SEC - (now - modeT0) / 1000);
+    timerEl.textContent = left.toFixed(0);
+    if (left <= 0) { finish(); return; }
+  }
+  if (landmarker && video.readyState >= 2 && video.currentTime !== lastVideoTime) {
+    lastVideoTime = video.currentTime;
+    const res = landmarker.detectForVideo(video, now);
+    lastHands = res.landmarks || [];
+    const mirror = facing === "user";
+    lastHands.forEach((lm, i) => {
+      const key = res.handedness?.[i]?.[0]?.categoryName || ("H" + i);
+      updateHand(key, readHand(lm, cv.width, cv.height, mirror, live.get(key)?.d), now);
+    });
+    const anyFist = [...live.values()].some(s => now - s.t < 150 && s.fist);
+    statusEl.textContent = mode === "rec" ? (anyFist ? "筆を上げています" : "書いています") :
+      lastHands.length ? "準備OK：「書き始める」を押してください" : "手を映してください";
+  }
+  hushStale();
+  compose(now);
+  requestAnimationFrame(loop);
+}
+
+// ======================================================================
+// 3D viewer
+// ======================================================================
+let renderer, scene, camera3, controls, group, colorMine = { value: new THREE.Color() }, pointScale = { value: 1 };
+let viewSpan = 1;
+
+function initThree() {
+  if (renderer) return;
+  renderer = new THREE.WebGLRenderer({ canvas: $("gl"), antialias: true, preserveDrawingBuffer: true });
+  renderer.setPixelRatio(Math.min(2, devicePixelRatio));
+  scene = new THREE.Scene();
+  camera3 = new THREE.PerspectiveCamera(45, 1, 0.01, 100);
+  controls = new OrbitControls(camera3, renderer.domElement);
+  controls.enableDamping = true; controls.autoRotateSpeed = 1.6;
+  group = new THREE.Group(); scene.add(group);
+  addEventListener("resize", resize3);
+  renderer.setAnimationLoop(() => {
+    if (mode !== "view") return;
+    controls.autoRotate = $("autoRot").checked;
+    controls.update();
+    renderer.render(scene, camera3);
+  });
+}
+function resize3() {
+  if (!renderer) return;
+  const w = innerWidth, h = innerHeight;
+  renderer.setSize(w, h, false);
+  camera3.aspect = w / h; camera3.updateProjectionMatrix();
+  pointScale.value = h * renderer.getPixelRatio() / (2 * Math.tan(THREE.MathUtils.degToRad(camera3.fov) / 2));
+}
+const rgb = c => c.split(",").map(v => +v / 255);
+function applyColor() {
+  const [r, g, b] = rgb($("ink3").value);
+  colorMine.value.setRGB(r, g, b);   // raw values: the shaders write them straight out
+  const lum = 0.3 * r + 0.59 * g + 0.11 * b;
+  scene.background = new THREE.Color(lum < 0.35 ? 0xefe9df : 0x0e0d0c);
+}
+$("ink3").onchange = () => { $("ink").value = $("ink3").value; applyColor(); };
+$("depth").oninput = () => { if (group) group.scale.z = +$("depth").value / 10; };
+$("front").onclick = () => frontView();
+
+const tubeVS = `
+  attribute float aDry;
+  varying vec2 vUv; varying float vDry;
+  void main(){ vUv = uv; vDry = aDry; gl_Position = projectionMatrix * modelViewMatrix * vec4(position,1.0); }`;
+const tubeFS = `
+  uniform vec3 uColor; uniform float uSeed;
+  varying vec2 vUv; varying float vDry;
+  float h1(float n){ return fract(sin(n * 12.9898 + uSeed) * 43758.5453); }
+  float h2(vec2 p){ return fract(sin(dot(p, vec2(12.9898, 78.233)) + uSeed) * 43758.5453); }
+  void main(){
+    float hair = floor(vUv.x * ${HAIRS3}.0);
+    float load = 0.3 + 0.7 * h1(hair);
+    float inkAmt = load + (h2(vec2(hair, floor(vUv.y * 90.0))) - 0.5) * 0.1;
+    if (inkAmt < vDry * 0.9) discard;
+    float a = (0.5 + 0.4 * min(1.0, inkAmt)) * (1.0 - 0.35 * vDry);
+    gl_FragColor = vec4(uColor, a);
+  }`;
+const blotVS = `
+  attribute float aSize; attribute float aAlpha; uniform float uScale; varying float vA;
+  void main(){ vec4 mv = modelViewMatrix * vec4(position,1.0); vA = aAlpha;
+    gl_PointSize = aSize * uScale / -mv.z; gl_Position = projectionMatrix * mv; }`;
+const blotFS = `
+  uniform vec3 uColor; varying float vA;
+  void main(){ float d = length(gl_PointCoord - 0.5) * 2.0; if (d > 1.0) discard;
+    float f = 1.0 - smoothstep(0.0, 1.0, d); gl_FragColor = vec4(uColor, vA * f * f); }`;
+
+function clearScene() {
+  if (!group) return;
+  for (const o of [...group.children]) { o.geometry.dispose(); o.material.dispose(); group.remove(o); }
+}
+
+// Catmull-Rom resampling so fast strokes stay smooth curves instead of corners
+function resample(S, sub = 3) {
+  if (S.length < 3) return S;
+  const out = [];
+  for (let i = 0; i < S.length - 1; i++) {
+    const p0 = S[Math.max(0, i - 1)], p1 = S[i], p2 = S[i + 1], p3 = S[Math.min(S.length - 1, i + 2)];
+    for (let k = 0; k < sub; k++) {
+      const t = k / sub, t2 = t * t, t3 = t2 * t;
+      const c = p1.c.map((_, j) => 0.5 * ((2 * p1.c[j]) + (-p0.c[j] + p2.c[j]) * t +
+        (2 * p0.c[j] - 5 * p1.c[j] + 4 * p2.c[j] - p3.c[j]) * t2 + (-p0.c[j] + 3 * p1.c[j] - 3 * p2.c[j] + p3.c[j]) * t3));
+      out.push({ c, r: p1.r + (p2.r - p1.r) * t, dry: p1.dry + (p2.dry - p1.dry) * t, wet: p1.wet + (p2.wet - p1.wet) * t });
+    }
+  }
+  out.push(S[S.length - 1]);
+  return out;
+}
+
+// Sweep a circle along the stroke → tube. Frames are parallel-transported so the tube doesn't twist.
+function buildTube(S, ctr, seed, colorU) {
+  const n = S.length, M = 20;
+  const V = THREE.Vector3;
+  const C = S.map(s => new V(s.c[0] - ctr[0], s.c[1] - ctr[1], s.c[2] - ctr[2]));
+  const T = C.map((_, i) => new V().subVectors(C[Math.min(n - 1, i + 1)], C[Math.max(0, i - 1)]));
+  let last = new V(1, 0, 0);
+  for (const t of T) { if (t.lengthSq() < 1e-12) t.copy(last); else { t.normalize(); last = t.clone(); } }
+  const N = [], B = [];
+  let nrm = new V(0, 0, 1).cross(T[0]); if (nrm.lengthSq() < 1e-6) nrm = new V(0, 1, 0).cross(T[0]); nrm.normalize();
+  for (let i = 0; i < n; i++) {
+    nrm.sub(T[i].clone().multiplyScalar(nrm.dot(T[i])));
+    if (nrm.lengthSq() < 1e-8) { nrm = new V(0, 0, 1).cross(T[i]); if (nrm.lengthSq() < 1e-6) nrm = new V(0, 1, 0).cross(T[i]); }
+    nrm.normalize();
+    N.push(nrm.clone()); B.push(new V().crossVectors(T[i], nrm));
+  }
+  const pos = [], uv = [], dry = [], idx = [];
+  let vlen = 0;
+  for (let i = 0; i < n; i++) {
+    if (i) vlen += C[i].distanceTo(C[i - 1]);
+    for (let j = 0; j <= M; j++) {
+      const a = j / M * Math.PI * 2, r = S[i].r;
+      const p = C[i].clone().addScaledVector(N[i], Math.cos(a) * r).addScaledVector(B[i], Math.sin(a) * r);
+      pos.push(p.x, p.y, p.z); uv.push(j / M, vlen); dry.push(S[i].dry);
+    }
+  }
+  for (let i = 0; i < n - 1; i++) for (let j = 0; j < M; j++) {
+    const a = i * (M + 1) + j, b = a + 1, c = a + M + 1, d = c + 1;
+    idx.push(a, c, b, b, c, d);
+  }
+  // round off both ends with caps
+  for (const [i, ring] of [[0, 0], [n - 1, (n - 1) * (M + 1)]]) {
+    const ci = pos.length / 3;
+    pos.push(C[i].x, C[i].y, C[i].z); uv.push(0.5, i ? vlen : 0); dry.push(S[i].dry);
+    for (let j = 0; j < M; j++) idx.push(ci, ring + j, ring + j + 1);
+  }
+  const geo = new THREE.BufferGeometry();
+  geo.setAttribute("position", new THREE.Float32BufferAttribute(pos, 3));
+  geo.setAttribute("uv", new THREE.Float32BufferAttribute(uv, 2));
+  geo.setAttribute("aDry", new THREE.Float32BufferAttribute(dry, 1));
+  geo.setIndex(idx);
+  const mat = new THREE.ShaderMaterial({
+    vertexShader: tubeVS, fragmentShader: tubeFS,
+    uniforms: { uColor: colorU, uSeed: { value: seed } },
+    transparent: true, side: THREE.DoubleSide, depthWrite: false,
+  });
+  return new THREE.Mesh(geo, mat);
+}
+
+function finish() {
+  stopCamera();
+  hushAll(); droneOff(); chord();
+  const usable = strokes.filter(s => s.samples.length >= 2);
+  if (!usable.length) {
+    setMode("ready"); statusEl.textContent = "線が書けていませんでした。もう一度どうぞ";
+    startCamera().then(() => requestAnimationFrame(loop));
+    return;
+  }
+  initThree(); clearScene();
+  $("ink3").value = $("ink").value; applyColor();
+
+  // centre everything so it rotates around the middle of the writing
+  const all = usable.flatMap(s => s.samples);
+  const min = [0, 1, 2].map(k => Math.min(...all.map(p => p.c[k] - p.r)));
+  const max = [0, 1, 2].map(k => Math.max(...all.map(p => p.c[k] + p.r)));
+  const ctr = min.map((v, k) => (v + max[k]) / 2);
+  viewSpan = Math.max(max[0] - min[0], max[1] - min[1], 0.2);
+
+  for (const st of usable) {
+    const colorU = st.who === "me" ? colorMine : { value: new THREE.Color().setRGB(...rgb(st.col)) };
+    group.add(buildTube(resample(st.samples), ctr, st.seed, colorU));
+
+    // nijimi: soft blots where the brush lingered
+    const bp = [], bs = [], ba = [];
+    for (const x of st.samples) {
+      if (x.wet < 0.08) continue;
+      bp.push(x.c[0] - ctr[0], x.c[1] - ctr[1], x.c[2] - ctr[2]);
+      bs.push(x.r * 2 * (1 + 1.2 * x.wet) + 0.01);
+      ba.push(0.18 * x.wet);
+    }
+    if (bp.length) {
+      const pg = new THREE.BufferGeometry();
+      pg.setAttribute("position", new THREE.Float32BufferAttribute(bp, 3));
+      pg.setAttribute("aSize", new THREE.Float32BufferAttribute(bs, 1));
+      pg.setAttribute("aAlpha", new THREE.Float32BufferAttribute(ba, 1));
+      const pm = new THREE.ShaderMaterial({
+        vertexShader: blotVS, fragmentShader: blotFS,
+        uniforms: { uColor: colorU, uScale: pointScale }, transparent: true, depthWrite: false,
+      });
+      group.add(new THREE.Points(pg, pm));
+    }
+  }
+  group.scale.z = +$("depth").value / 10;
+  setMode("view");
+  resize3();
+  frontView();
+}
+function frontView() {
+  controls.target.set(0, 0, 0);
+  const d = viewSpan / (2 * Math.tan(THREE.MathUtils.degToRad(camera3.fov) / 2)) * 1.35 / Math.min(1, camera3.aspect);
+  camera3.position.set(0, 0, d);
+  controls.update();
+}
+
+$("save").onclick = () => {
+  renderer.render(scene, camera3);
+  renderer.domElement.toBlob(b => {
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(b);
+    a.download = "gassho-3d-" + new Date().toISOString().replace(/[:.]/g, "-") + ".png";
+    a.click(); setTimeout(() => URL.revokeObjectURL(a.href), 2000);
+  }, "image/png");
+};
+</script>
+</body>
+</html>
