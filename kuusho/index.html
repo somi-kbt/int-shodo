@@ -51,7 +51,7 @@
 <body>
 <div id="start">
   <h1>空書<small>KUUSHO</small></h1>
-  <p class="how">五本の指先が、そのまま筆になる。<br>指を広げると太く、すぼめると細く。<br>速く払えばかすれ、ゆっくり留めればにじむ。<br>十五秒で書き、書いた線を立体で眺める。</p>
+  <p class="how">五本の指先がふちになる、丸い筆。<br>指を広げると太く、すぼめると細く。<br>ゆっくり留めれば、墨がにじむ。<br>グーにすると筆が上がる。<br>十五秒で書き、書いた線を立体で眺める。</p>
   <p>映像は端末の中だけで処理され、どこにも送信されません。</p>
   <button class="primary" id="go">筆をとる</button>
   <p id="err" class="ui" style="color:#fca5a5"></p>
@@ -102,8 +102,11 @@ const $ = id => document.getElementById(id);
 const video = $("video"), cv = $("cv"), ctx = cv.getContext("2d");
 const statusEl = $("status"), timerEl = $("timer");
 const CONNECTIONS = HandLandmarker.HAND_CONNECTIONS;
-const TIPS = [4, 8, 12, 16, 20];            // thumb → pinky: the edge of the brush
-const HAIRS = 44;                            // hairs across the brush
+const TIPS = [4, 8, 12, 16, 20];
+const FINGERS = [[8, 6], [12, 10], [16, 14], [20, 18]];   // [tip, PIP] for index..pinky
+const HAIRS = 64;                            // hairs in the round brush (2D)
+const HAIRS3 = 40;                           // hairs around the tube (3D)
+const GAP_MS = 500;                          // tracking may drop out this long without breaking the line
 const REC_SEC = 15;
 
 let landmarker = null, stream = null, facing = "user", lastVideoTime = -1;
@@ -116,20 +119,17 @@ let strokes = [];                            // recorded strokes for 3D
 
 const clamp = (v, a, b) => Math.min(b, Math.max(a, v));
 const smooth = (a, b, x) => { const t = clamp((x - a) / (b - a), 0, 1); return t * t * (3 - 2 * t); };
-const lerpPts = (A, B, t) => A.map((p, i) => p.map((v, k) => v + (B[i][k] - v) * t));
-function along(pts, s) {                     // point at s∈[0,1] on the polyline through the fingertips
-  const f = s * (pts.length - 1), i = Math.min(pts.length - 2, Math.floor(f)), t = f - i;
-  return pts[i].map((v, k) => v + (pts[i + 1][k] - v) * t);
-}
-const polyLen = pts => pts.slice(1).reduce((s, p, i) => s + Math.hypot(...p.map((v, k) => v - pts[i][k])), 0);
+const lerp = (a, b, t) => a.map((v, k) => v + (b[k] - v) * t);
 const centroid = pts => pts[0].map((_, k) => pts.reduce((s, p) => s + p[k], 0) / pts.length);
+const dist = (a, b) => Math.hypot(...a.map((v, k) => v - b[k]));
 
 // ---------- model & camera ----------
 async function loadModel() {
   const fs = await FilesetResolver.forVisionTasks("https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14/wasm");
   const opts = (delegate) => ({
     baseOptions: { modelAssetPath: "https://storage.googleapis.com/mediapipe-models/hand_landmarker/hand_landmarker/float16/1/hand_landmarker.task", delegate },
-    runningMode: "VIDEO", numHands: 2, minHandDetectionConfidence: 0.5, minTrackingConfidence: 0.5,
+    runningMode: "VIDEO", numHands: 2,
+    minHandDetectionConfidence: 0.4, minHandPresenceConfidence: 0.3, minTrackingConfidence: 0.3,  // hold on through motion blur
   });
   try { landmarker = await HandLandmarker.createFromOptions(fs, opts("GPU")); }
   catch { landmarker = await HandLandmarker.createFromOptions(fs, opts("CPU")); }
@@ -137,7 +137,7 @@ async function loadModel() {
 async function startCamera() {
   stopCamera();
   stream = await navigator.mediaDevices.getUserMedia({
-    video: { facingMode: facing, width: { ideal: 1280 }, height: { ideal: 720 } }, audio: false });
+    video: { facingMode: facing, width: { ideal: 1280 }, height: { ideal: 720 }, frameRate: { ideal: 60 } }, audio: false });
   video.srcObject = stream;
   await video.play();
   cv.width = ink.width = video.videoWidth; cv.height = ink.height = video.videoHeight;
@@ -191,64 +191,84 @@ $("again").onclick = async () => {
 };
 
 // ---------- reading the hand ----------
+// Brush = a circle around the five fingertips: centre = their centre, radius = their average distance from it.
 function readHand(lm, W, H, mirror, prevDepth) {
   const P = i => [(mirror ? 1 - lm[i].x : lm[i].x) * W, lm[i].y * H];
   const tips2 = TIPS.map(P);
-  const [wx, wy] = P(0), [mx, my] = P(9);
-  const handSize = Math.max(4, Math.hypot(mx - wx, my - wy)) / H;   // apparent size → distance
+  const c2 = centroid(tips2);
+  const r2 = Math.max(1.5, Math.sqrt(tips2.reduce((s, p) => s + (p[0] - c2[0]) ** 2 + (p[1] - c2[1]) ** 2, 0) / 5));
+
+  // distance from camera, estimated from how big the hand looks
+  const handSize = Math.max(4, dist(P(0), P(9))) / H;
   const raw = 0.2 / handSize;
   const d = prevDepth == null ? raw : prevDepth * 0.8 + raw * 0.2;
-  const tips3 = TIPS.map((i, n) => {
-    const [px, py] = tips2[n];
-    return [(px - W / 2) / H * d, -(py - H / 2) / H * d, -(d + lm[i].z * (W / H) * d)];
-  });
-  return { tips2, tips3, d };
+  const zRel = TIPS.reduce((s, i) => s + lm[i].z, 0) / 5;
+  const c3 = [(c2[0] - W / 2) / H * d, -(c2[1] - H / 2) / H * d, -(d + zRel * (W / H) * d)];
+  const r3 = r2 / H * d;
+
+  // fist: count fingers whose tip is closer to the wrist than its middle joint
+  const L = i => [lm[i].x, lm[i].y, lm[i].z];
+  const curled = FINGERS.filter(([t, p]) => dist(L(t), L(0)) < dist(L(p), L(0)) * 1.05).length;
+  return { tips2, c2, r2, c3, r3, d, curled };
 }
 
 function updateHand(key, h, now) {
   let s = live.get(key);
-  if (!s || now - s.t > 250) {               // hand (re)appeared → new stroke
-    s = { t: now, d: h.d, v: 0, tips2: h.tips2, tips3: h.tips3, hairs: newHairs(), stroke: null };
-    if (mode === "rec") { s.stroke = { samples: [], seed: Math.random() * 1000 }; strokes.push(s.stroke); }
+  if (!s || now - s.t > GAP_MS) {
+    s = { t: now, d: h.d, v: 0, fist: h.curled >= 3, hist: [], stroke: null, hairs: newHairs(),
+          c2: h.c2, r2: h.r2, c3: h.c3, r3: h.r3, tips2: h.tips2 };
     live.set(key, s);
-    record(s, 0, 0, now);
-    return;
   }
+  // fist with hysteresis so it doesn't flicker
+  if (h.curled >= 3) s.fist = true; else if (h.curled <= 1) s.fist = false;
+
   const dt = Math.max(1, now - s.t);
-  const tips2 = lerpPts(s.tips2, h.tips2, 0.6);
-  const tips3 = lerpPts(s.tips3, h.tips3, 0.6);
-  const c0 = centroid(s.tips2), c1 = centroid(tips2);
-  const v = Math.hypot(c1[0] - c0[0], c1[1] - c0[1]) / cv.width / (dt / 1000);
-  s.v = s.v * 0.6 + v * 0.4;
-  const dry = smooth(0.3, 1.4, s.v);         // fast → kasure
+  const c2 = lerp(s.c2, h.c2, 0.7), c3 = lerp(s.c3, h.c3, 0.7);
+  const r2 = s.r2 * 0.55 + h.r2 * 0.45, r3 = s.r3 * 0.55 + h.r3 * 0.45;
+  const v = dist(c2, s.c2) / cv.width / (dt / 1000);
+  s.v = s.v * 0.5 + v * 0.5;
+  const dry = 0;                             // no kasure: every hair always carries ink
   const wet = 1 - smooth(0.03, 0.28, s.v);   // slow → nijimi
-  if (mode === "rec") paint2D(s, s.tips2, tips2, dry, wet);
-  Object.assign(s, { t: now, d: h.d, tips2, tips3 });
-  record(s, dry, wet, now);
+  Object.assign(s, { t: now, d: h.d, c2, r2, c3, r3, tips2: h.tips2 });
+
+  if (s.fist || mode !== "rec") { s.stroke = null; s.hist = []; return; }
+  if (!s.stroke) { s.stroke = { samples: [], seed: Math.random() * 1000 }; strokes.push(s.stroke); s.hairs = newHairs(); }
+  s.hist.push({ c: c2, r: r2 }); if (s.hist.length > 3) s.hist.shift();
+  paint2D(s, dry, wet);
+  s.stroke.samples.push({ c: c3.slice(), r: r3, dry, wet });
 }
-function record(s, dry, wet, now) {
-  if (mode === "rec" && s.stroke) s.stroke.samples.push({ p: s.tips3.map(p => p.slice()), dry, wet });
+function newHairs() {                        // hairs spread over a unit disk
+  return Array.from({ length: HAIRS }, () => {
+    const rho = Math.sqrt(Math.random()), th = Math.random() * Math.PI * 2;
+    return { x: rho * Math.cos(th), y: rho * Math.sin(th), rho, load: 0.3 + Math.random() * 0.7 };
+  });
 }
-function newHairs() { return Array.from({ length: HAIRS }, () => 0.3 + Math.random() * 0.7); }
 
 // ---------- 2D ink while writing ----------
-function paint2D(s, A, B, dry, wet) {
-  const col = $("ink").value, g = ictx;
-  const span = polyLen(B);
-  g.lineCap = dry > 0.4 ? "butt" : "round";
-  g.lineWidth = Math.max(1.2, span / HAIRS * (dry > 0.4 ? 1.5 : 2.6));
-  for (let i = 0; i < HAIRS; i++) {
-    const u = (i + 0.5) / HAIRS;
-    const inkAmt = s.hairs[i] * (1 - 0.45 * Math.abs(u * 2 - 1)) + (Math.random() - 0.5) * 0.1;
+const mid = (a, b) => ({ c: lerp(a.c, b.c, 0.5), r: (a.r + b.r) / 2 });
+function paint2D(s, dry, wet) {
+  const H = s.hist, n = H.length, col = $("ink").value, g = ictx;
+  if (n < 2) { blot(g, col, H[0].c[0], H[0].c[1], H[0].r * 1.1 + 3, 0.12); return; }
+  // smooth curve through the samples: from the previous midpoint to the next, bending at the sample
+  const A = n === 2 ? H[0] : mid(H[0], H[1]), C = H[n - 2], B = mid(H[n - 2], H[n - 1]);
+  const at = (q, h) => [q.c[0] + h.x * q.r, q.c[1] + h.y * q.r];
+  g.lineCap = "round";
+  g.lineWidth = Math.max(1.3, (2 * C.r / Math.sqrt(HAIRS)) * (dry > 0.4 ? 1.4 : 2.2));
+  for (const h of s.hairs) {
+    const inkAmt = h.load * (1 - 0.45 * h.rho) + (Math.random() - 0.5) * 0.1;
     if (inkAmt < dry * 0.9) continue;
     const a = (0.5 + 0.45 * Math.min(1, inkAmt)) * (1 - 0.35 * dry);
-    const p = along(A, u), q = along(B, u);
+    const [ax, ay] = at(A, h), [cx, cy] = at(C, h), [bx, by] = at(B, h);
     g.strokeStyle = `rgba(${col},${a.toFixed(3)})`;
-    g.beginPath(); g.moveTo(p[0], p[1]); g.lineTo(q[0], q[1]); g.stroke();
+    g.beginPath(); g.moveTo(ax, ay); g.quadraticCurveTo(cx, cy, bx, by); g.stroke();
   }
   if (wet > 0.03) {
-    const r = (span / 8 + 5) * (1 + 1.2 * wet);
-    for (const t of B) blot(g, col, t[0] + (Math.random() - .5) * r * .6, t[1] + (Math.random() - .5) * r * .6, r, 0.07 * wet);
+    const r = B.r * (1 + 1.2 * wet) + 4;
+    blot(g, col, B.c[0], B.c[1], r, 0.08 * wet);
+    for (let i = 0; i < 2; i++) {
+      const ang = Math.random() * Math.PI * 2;
+      blot(g, col, B.c[0] + Math.cos(ang) * r * 0.7, B.c[1] + Math.sin(ang) * r * 0.7, r * 0.4, 0.06 * wet);
+    }
   }
 }
 function blot(g, col, x, y, r, a) {
@@ -271,7 +291,7 @@ function compose(now) {
   }
   ctx.drawImage(ink, 0, 0);
   if ($("showSkel").checked) {
-    ctx.strokeStyle = "rgba(255,255,255,.6)"; ctx.lineWidth = 2 * sc; ctx.fillStyle = "#fff";
+    ctx.strokeStyle = "rgba(255,255,255,.6)"; ctx.lineWidth = 2 * sc;
     for (const lm of lastHands) {
       const P = p => [(mirror ? 1 - p.x : p.x) * W, p.y * H];
       for (const c of CONNECTIONS) {
@@ -280,13 +300,16 @@ function compose(now) {
       }
     }
   }
-  // the brush edge: a line through the five fingertips
+  // the brush: circle through the fingertips (dashed = lifted)
   for (const s of live.values()) {
-    if (now - s.t > 120) continue;
-    ctx.strokeStyle = "rgba(255,255,255,.55)"; ctx.lineWidth = 1.5 * sc;
-    ctx.beginPath(); s.tips2.forEach((p, i) => i ? ctx.lineTo(p[0], p[1]) : ctx.moveTo(p[0], p[1])); ctx.stroke();
+    if (now - s.t > 150) continue;
+    ctx.lineWidth = 1.6 * sc;
+    ctx.strokeStyle = s.fist ? "rgba(255,255,255,.35)" : "rgba(255,255,255,.7)";
+    ctx.setLineDash(s.fist ? [6 * sc, 6 * sc] : []);
+    ctx.beginPath(); ctx.arc(s.c2[0], s.c2[1], s.r2, 0, Math.PI * 2); ctx.stroke();
+    ctx.setLineDash([]);
     ctx.fillStyle = "rgba(255,255,255,.85)";
-    for (const p of s.tips2) { ctx.beginPath(); ctx.arc(p[0], p[1], 3.5 * sc, 0, 7); ctx.fill(); }
+    for (const p of s.tips2) { ctx.beginPath(); ctx.arc(p[0], p[1], 3 * sc, 0, 7); ctx.fill(); }
   }
 }
 
@@ -311,7 +334,8 @@ function loop() {
       const key = res.handedness?.[i]?.[0]?.categoryName || ("H" + i);
       updateHand(key, readHand(lm, cv.width, cv.height, mirror, live.get(key)?.d), now);
     });
-    statusEl.textContent = mode === "rec" ? "書いています" :
+    const anyFist = [...live.values()].some(s => now - s.t < 150 && s.fist);
+    statusEl.textContent = mode === "rec" ? (anyFist ? "筆を上げています" : "書いています") :
       lastHands.length ? "準備OK：「書き始める」を押してください" : "手を映してください";
   }
   compose(now);
@@ -356,21 +380,21 @@ $("ink3").onchange = () => { $("ink").value = $("ink3").value; applyColor(); };
 $("depth").oninput = () => { if (group) group.scale.z = +$("depth").value / 10; };
 $("front").onclick = () => frontView();
 
-const ribbonVS = `
+const tubeVS = `
   attribute float aDry;
   varying vec2 vUv; varying float vDry;
   void main(){ vUv = uv; vDry = aDry; gl_Position = projectionMatrix * modelViewMatrix * vec4(position,1.0); }`;
-const ribbonFS = `
+const tubeFS = `
   uniform vec3 uColor; uniform float uSeed;
   varying vec2 vUv; varying float vDry;
   float h1(float n){ return fract(sin(n * 12.9898 + uSeed) * 43758.5453); }
   float h2(vec2 p){ return fract(sin(dot(p, vec2(12.9898, 78.233)) + uSeed) * 43758.5453); }
   void main(){
-    float hair = floor(vUv.x * ${HAIRS}.0);
+    float hair = floor(vUv.x * ${HAIRS3}.0);
     float load = 0.3 + 0.7 * h1(hair);
-    float inkAmt = load * (1.0 - 0.45 * abs(vUv.x * 2.0 - 1.0)) + (h2(vec2(hair, floor(vUv.y * 90.0))) - 0.5) * 0.1;
+    float inkAmt = load + (h2(vec2(hair, floor(vUv.y * 90.0))) - 0.5) * 0.1;
     if (inkAmt < vDry * 0.9) discard;
-    float a = (0.55 + 0.4 * min(1.0, inkAmt)) * (1.0 - 0.35 * vDry);
+    float a = (0.5 + 0.4 * min(1.0, inkAmt)) * (1.0 - 0.35 * vDry);
     gl_FragColor = vec4(uColor, a);
   }`;
 const blotVS = `
@@ -387,6 +411,72 @@ function clearScene() {
   for (const o of [...group.children]) { o.geometry.dispose(); o.material.dispose(); group.remove(o); }
 }
 
+// Catmull-Rom resampling so fast strokes stay smooth curves instead of corners
+function resample(S, sub = 3) {
+  if (S.length < 3) return S;
+  const out = [];
+  for (let i = 0; i < S.length - 1; i++) {
+    const p0 = S[Math.max(0, i - 1)], p1 = S[i], p2 = S[i + 1], p3 = S[Math.min(S.length - 1, i + 2)];
+    for (let k = 0; k < sub; k++) {
+      const t = k / sub, t2 = t * t, t3 = t2 * t;
+      const c = p1.c.map((_, j) => 0.5 * ((2 * p1.c[j]) + (-p0.c[j] + p2.c[j]) * t +
+        (2 * p0.c[j] - 5 * p1.c[j] + 4 * p2.c[j] - p3.c[j]) * t2 + (-p0.c[j] + 3 * p1.c[j] - 3 * p2.c[j] + p3.c[j]) * t3));
+      out.push({ c, r: p1.r + (p2.r - p1.r) * t, dry: p1.dry + (p2.dry - p1.dry) * t, wet: p1.wet + (p2.wet - p1.wet) * t });
+    }
+  }
+  out.push(S[S.length - 1]);
+  return out;
+}
+
+// Sweep a circle along the stroke → tube. Frames are parallel-transported so the tube doesn't twist.
+function buildTube(S, ctr, seed) {
+  const n = S.length, M = 20;
+  const V = THREE.Vector3;
+  const C = S.map(s => new V(s.c[0] - ctr[0], s.c[1] - ctr[1], s.c[2] - ctr[2]));
+  const T = C.map((_, i) => new V().subVectors(C[Math.min(n - 1, i + 1)], C[Math.max(0, i - 1)]));
+  let last = new V(1, 0, 0);
+  for (const t of T) { if (t.lengthSq() < 1e-12) t.copy(last); else { t.normalize(); last = t.clone(); } }
+  const N = [], B = [];
+  let nrm = new V(0, 0, 1).cross(T[0]); if (nrm.lengthSq() < 1e-6) nrm = new V(0, 1, 0).cross(T[0]); nrm.normalize();
+  for (let i = 0; i < n; i++) {
+    nrm.sub(T[i].clone().multiplyScalar(nrm.dot(T[i])));
+    if (nrm.lengthSq() < 1e-8) { nrm = new V(0, 0, 1).cross(T[i]); if (nrm.lengthSq() < 1e-6) nrm = new V(0, 1, 0).cross(T[i]); }
+    nrm.normalize();
+    N.push(nrm.clone()); B.push(new V().crossVectors(T[i], nrm));
+  }
+  const pos = [], uv = [], dry = [], idx = [];
+  let vlen = 0;
+  for (let i = 0; i < n; i++) {
+    if (i) vlen += C[i].distanceTo(C[i - 1]);
+    for (let j = 0; j <= M; j++) {
+      const a = j / M * Math.PI * 2, r = S[i].r;
+      const p = C[i].clone().addScaledVector(N[i], Math.cos(a) * r).addScaledVector(B[i], Math.sin(a) * r);
+      pos.push(p.x, p.y, p.z); uv.push(j / M, vlen); dry.push(S[i].dry);
+    }
+  }
+  for (let i = 0; i < n - 1; i++) for (let j = 0; j < M; j++) {
+    const a = i * (M + 1) + j, b = a + 1, c = a + M + 1, d = c + 1;
+    idx.push(a, c, b, b, c, d);
+  }
+  // round off both ends with caps
+  for (const [i, ring] of [[0, 0], [n - 1, (n - 1) * (M + 1)]]) {
+    const ci = pos.length / 3;
+    pos.push(C[i].x, C[i].y, C[i].z); uv.push(0.5, i ? vlen : 0); dry.push(S[i].dry);
+    for (let j = 0; j < M; j++) idx.push(ci, ring + j, ring + j + 1);
+  }
+  const geo = new THREE.BufferGeometry();
+  geo.setAttribute("position", new THREE.Float32BufferAttribute(pos, 3));
+  geo.setAttribute("uv", new THREE.Float32BufferAttribute(uv, 2));
+  geo.setAttribute("aDry", new THREE.Float32BufferAttribute(dry, 1));
+  geo.setIndex(idx);
+  const mat = new THREE.ShaderMaterial({
+    vertexShader: tubeVS, fragmentShader: tubeFS,
+    uniforms: { uColor: colorU, uSeed: { value: seed } },
+    transparent: true, side: THREE.DoubleSide, depthWrite: false,
+  });
+  return new THREE.Mesh(geo, mat);
+}
+
 function finish() {
   stopCamera();
   const usable = strokes.filter(s => s.samples.length >= 2);
@@ -399,54 +489,24 @@ function finish() {
   $("ink3").value = $("ink").value; applyColor();
 
   // centre everything so it rotates around the middle of the writing
-  const all = usable.flatMap(s => s.samples.flatMap(x => x.p));
-  const min = [0, 1, 2].map(k => Math.min(...all.map(p => p[k])));
-  const max = [0, 1, 2].map(k => Math.max(...all.map(p => p[k])));
+  const all = usable.flatMap(s => s.samples);
+  const min = [0, 1, 2].map(k => Math.min(...all.map(p => p.c[k] - p.r)));
+  const max = [0, 1, 2].map(k => Math.max(...all.map(p => p.c[k] + p.r)));
   const ctr = min.map((v, k) => (v + max[k]) / 2);
   viewSpan = Math.max(max[0] - min[0], max[1] - min[1], 0.2);
 
-  const M = 9;                                 // vertices across the brush
   for (const st of usable) {
-    const S = st.samples, n = S.length;
-    const pos = new Float32Array(n * M * 3), uv = new Float32Array(n * M * 2), dry = new Float32Array(n * M);
-    let vlen = 0;
-    for (let i = 0; i < n; i++) {
-      if (i) { const a = centroid(S[i].p), b = centroid(S[i - 1].p); vlen += Math.hypot(a[0] - b[0], a[1] - b[1], a[2] - b[2]); }
-      for (let j = 0; j < M; j++) {
-        const u = j / (M - 1), p = along(S[i].p, u), o = i * M + j;
-        pos.set([p[0] - ctr[0], p[1] - ctr[1], p[2] - ctr[2]], o * 3);
-        uv.set([u, vlen], o * 2);
-        dry[o] = S[i].dry;
-      }
-    }
-    const idx = [];
-    for (let i = 0; i < n - 1; i++) for (let j = 0; j < M - 1; j++) {
-      const a = i * M + j, b = a + 1, c = a + M, d = c + 1;
-      idx.push(a, c, b, b, c, d);
-    }
-    const geo = new THREE.BufferGeometry();
-    geo.setAttribute("position", new THREE.BufferAttribute(pos, 3));
-    geo.setAttribute("uv", new THREE.BufferAttribute(uv, 2));
-    geo.setAttribute("aDry", new THREE.BufferAttribute(dry, 1));
-    geo.setIndex(idx);
-    const mat = new THREE.ShaderMaterial({
-      vertexShader: ribbonVS, fragmentShader: ribbonFS,
-      uniforms: { uColor: colorU, uSeed: { value: st.seed } },
-      transparent: true, side: THREE.DoubleSide, depthWrite: false,
-    });
-    group.add(new THREE.Mesh(geo, mat));
+    const S = resample(st.samples);
+    group.add(buildTube(S, ctr, st.seed));
 
     // nijimi: soft blots where the brush lingered
     const bp = [], bs = [], ba = [];
-    S.forEach((x, i) => {
-      if (x.wet < 0.08 || i % 2) return;
-      const span = polyLen(x.p);
-      for (const t of x.p) {
-        bp.push(t[0] - ctr[0], t[1] - ctr[1], t[2] - ctr[2]);
-        bs.push((span / 4 + 0.015) * (1 + 1.2 * x.wet) * 2);
-        ba.push(0.16 * x.wet);
-      }
-    });
+    for (const x of st.samples) {
+      if (x.wet < 0.08) continue;
+      bp.push(x.c[0] - ctr[0], x.c[1] - ctr[1], x.c[2] - ctr[2]);
+      bs.push(x.r * 2 * (1 + 1.2 * x.wet) + 0.01);
+      ba.push(0.18 * x.wet);
+    }
     if (bp.length) {
       const pg = new THREE.BufferGeometry();
       pg.setAttribute("position", new THREE.Float32BufferAttribute(bp, 3));
@@ -466,8 +526,8 @@ function finish() {
 }
 function frontView() {
   controls.target.set(0, 0, 0);
-  const dist = viewSpan / (2 * Math.tan(THREE.MathUtils.degToRad(camera3.fov) / 2)) * 1.35 / Math.min(1, camera3.aspect);
-  camera3.position.set(0, 0, dist);
+  const d = viewSpan / (2 * Math.tan(THREE.MathUtils.degToRad(camera3.fov) / 2)) * 1.35 / Math.min(1, camera3.aspect);
+  camera3.position.set(0, 0, d);
   controls.update();
 }
 
