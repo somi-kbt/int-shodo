@@ -51,7 +51,7 @@
 <body>
 <div id="start">
   <h1>空書<small>KUUSHO</small></h1>
-  <p class="how">五本の指先がふちになる、丸い筆。<br>指を広げると太く、すぼめると細く。<br>ゆっくり留めれば、墨がにじむ。<br>グーにすると筆が上がる。<br>十五秒で書き、書いた線を立体で眺める。</p>
+  <p class="how">五本の指先がふちになる、丸い筆。<br>指を広げると太く、すぼめると細く。<br>グーにすると筆が上がる。<br>十五秒で書き、書いた線を立体で眺める。</p>
   <p>映像は端末の中だけで処理され、どこにも送信されません。</p>
   <button class="primary" id="go">筆をとる</button>
   <p id="err" class="ui" style="color:#fca5a5"></p>
@@ -228,7 +228,7 @@ function updateHand(key, h, now) {
   const v = dist(c2, s.c2) / cv.width / (dt / 1000);
   s.v = s.v * 0.5 + v * 0.5;
   const dry = 0;                             // no kasure: every hair always carries ink
-  const wet = 1 - smooth(0.03, 0.28, s.v);   // slow → nijimi
+  const wet = 0;                             // no nijimi: clean edges
   Object.assign(s, { t: now, d: h.d, c2, r2, c3, r3, tips2: h.tips2 });
 
   if (s.fist || mode !== "rec") { s.stroke = null; s.hist = []; return; }
@@ -248,7 +248,7 @@ function newHairs() {                        // hairs spread over a unit disk
 const mid = (a, b) => ({ c: lerp(a.c, b.c, 0.5), r: (a.r + b.r) / 2 });
 function paint2D(s, dry, wet) {
   const H = s.hist, n = H.length, col = $("ink").value, g = ictx;
-  if (n < 2) { blot(g, col, H[0].c[0], H[0].c[1], H[0].r * 1.1 + 3, 0.12); return; }
+  if (n < 2) { g.fillStyle = `rgba(${col},0.9)`; g.beginPath(); g.arc(H[0].c[0], H[0].c[1], H[0].r, 0, Math.PI * 2); g.fill(); return; }
   // smooth curve through the samples: from the previous midpoint to the next, bending at the sample
   const A = n === 2 ? H[0] : mid(H[0], H[1]), C = H[n - 2], B = mid(H[n - 2], H[n - 1]);
   const at = (q, h) => [q.c[0] + h.x * q.r, q.c[1] + h.y * q.r];
