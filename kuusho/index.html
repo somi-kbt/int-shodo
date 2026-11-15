@@ -5,37 +5,42 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>kuusho 空書 – 体で書道</title>
 <style>
-  :root { --bg:#0b0d12; --panel:rgba(20,23,31,.82); --fg:#e9ecf3; --mute:#8a93a6; --acc:#5eead4; }
+  :root { --bg:#0e0d0c; --panel:rgba(22,20,18,.84); --fg:#efe9df; --mute:#9a9286; --acc:#d63a24; }
   * { box-sizing:border-box; }
   html,body { margin:0; height:100%; background:var(--bg); color:var(--fg);
-    font-family:-apple-system,BlinkMacSystemFont,"Hiragino Sans","Noto Sans JP",sans-serif; }
+    font-family:-apple-system,BlinkMacSystemFont,"Hiragino Mincho ProN","Yu Mincho","Noto Serif JP",serif; }
   #stage { position:fixed; inset:0; display:flex; align-items:center; justify-content:center; }
   canvas { max-width:100%; max-height:100%; }
   video { display:none; }
-  #start { position:fixed; inset:0; display:flex; flex-direction:column; gap:14px;
+  #start { position:fixed; inset:0; display:flex; flex-direction:column; gap:16px;
     align-items:center; justify-content:center; text-align:center; padding:24px; z-index:5; background:var(--bg); }
-  #start h1 { margin:0; font-size:26px; letter-spacing:.02em; }
-  #start p { margin:0; color:var(--mute); line-height:1.7; max-width:420px; }
-  button, select { font:inherit; color:var(--fg); background:#232838; border:1px solid #343b50;
-    border-radius:10px; padding:9px 13px; }
-  button.primary { background:var(--acc); color:#06231f; border:none; font-weight:700; padding:13px 26px; font-size:17px; }
+  #start h1 { margin:0; font-size:44px; font-weight:600; letter-spacing:.2em; }
+  #start h1 small { display:block; font-size:14px; letter-spacing:.3em; color:var(--mute); font-weight:400; margin-top:4px; }
+  #start p { margin:0; color:var(--mute); line-height:1.9; max-width:440px; font-size:14px; }
+  #start .how { color:var(--fg); font-size:15px; }
+  button, select { font:inherit; font-family:-apple-system,BlinkMacSystemFont,"Hiragino Sans","Noto Sans JP",sans-serif;
+    color:var(--fg); background:#2a2622; border:1px solid #403a33; border-radius:10px; padding:9px 13px; font-size:14px; }
+  button.primary { background:var(--acc); color:#fff; border:none; font-weight:700; padding:13px 30px; font-size:17px; letter-spacing:.1em; }
   button:active { transform:scale(.97); }
   #bar { position:fixed; left:50%; bottom:max(14px, env(safe-area-inset-bottom)); transform:translateX(-50%);
     display:flex; flex-wrap:wrap; gap:8px; align-items:center; justify-content:center;
+    font-family:-apple-system,BlinkMacSystemFont,"Hiragino Sans","Noto Sans JP",sans-serif;
     background:var(--panel); backdrop-filter:blur(10px); -webkit-backdrop-filter:blur(10px);
-    padding:10px 12px; border-radius:16px; width:min(96vw, 760px); z-index:4; }
+    padding:10px 12px; border-radius:16px; width:min(96vw, 780px); z-index:4; }
   #bar label { display:flex; align-items:center; gap:6px; color:var(--mute); font-size:13px; }
-  #bar input[type=range] { width:90px; accent-color:var(--acc); }
+  #bar input[type=range] { width:84px; accent-color:var(--acc); }
   #status { position:fixed; top:max(10px, env(safe-area-inset-top)); left:12px; font-size:12px;
+    font-family:-apple-system,BlinkMacSystemFont,"Hiragino Sans","Noto Sans JP",sans-serif;
     color:var(--mute); background:var(--panel); padding:5px 9px; border-radius:8px; z-index:4; }
   .hidden { display:none !important; }
 </style>
 </head>
 <body>
 <div id="start">
-  <h1>kuusho <span style="font-weight:400;opacity:.7">空書</span></h1>
-  <p>カメラに映った人の手を検出して、動きの軌跡を描きます。<br>映像は端末内だけで処理され、どこにも送信されません。</p>
-  <button class="primary" id="go">カメラを起動</button>
+  <h1>空書<small>KUUSHO</small></h1>
+  <p class="how">五本の指で筆を持つように。<br>指を広げると太く、すぼめると細く。<br>速く払えばかすれ、ゆっくり留めればにじむ。</p>
+  <p>映像は端末の中だけで処理され、どこにも送信されません。</p>
+  <button class="primary" id="go">筆をとる</button>
   <p id="err" style="color:#fca5a5"></p>
 </div>
 
@@ -44,14 +49,15 @@
 <div id="status" class="hidden">読み込み中…</div>
 
 <div id="bar" class="hidden">
-  <select id="point" title="追跡する点">
-    <option value="8">人差し指の先</option>
-    <option value="tips">全部の指先</option>
-    <option value="9">手のひら中心</option>
-    <option value="0">手首</option>
+  <select id="ink" title="墨の色">
+    <option value="244,238,226">白墨</option>
+    <option value="18,16,14">墨</option>
+    <option value="214,58,36">朱</option>
+    <option value="212,172,70">金</option>
+    <option value="52,86,170">藍</option>
   </select>
-  <label>残る長さ <input id="life" type="range" min="1" max="21" value="4"><span id="lifeTxt">4秒</span></label>
-  <label>太さ <input id="width" type="range" min="2" max="24" value="7"></label>
+  <label>残る長さ <input id="life" type="range" min="1" max="21" value="8"><span id="lifeTxt">8秒</span></label>
+  <label>筆の大きさ <input id="size" type="range" min="20" max="200" value="90"></label>
   <label><input id="showVideo" type="checkbox" checked> 映像</label>
   <label><input id="showSkel" type="checkbox"> 骨格</label>
   <button id="flip">🔄 カメラ切替</button>
@@ -65,27 +71,62 @@ import { FilesetResolver, HandLandmarker } from "https://cdn.jsdelivr.net/npm/@m
 const $ = id => document.getElementById(id);
 const video = $("video"), cv = $("cv"), ctx = cv.getContext("2d");
 const statusEl = $("status");
-let landmarker = null, stream = null, facing = "user", lastVideoTime = -1;
-// trails: key -> array of segments; segment = array of {x,y,t}
-const trails = new Map();
-const lastSeen = new Map();
-const COLORS = ["#5eead4","#f472b6","#facc15","#60a5fa","#fb923c","#a78bfa","#4ade80","#f87171","#22d3ee","#e879f9"];
 const CONNECTIONS = HandLandmarker.HAND_CONNECTIONS;
+const TIPS = [4, 8, 12, 16, 20];
+const BUCKETS = 8;             // ink is split into time slices so old strokes can fade out
+const BRISTLES = 30;
 
-const lifeSec = () => { const v = +$("life").value; return v > 20 ? Infinity : v; };
-$("life").oninput = () => { $("lifeTxt").textContent = lifeSec() === Infinity ? "∞" : lifeSec() + "秒"; };
+let landmarker = null, stream = null, facing = "user", lastVideoTime = -1;
+let layers = [], pool = [];
+const brushes = new Map();     // per-hand brush state
+let lastHands = [];
 
+const clamp = (v, a, b) => Math.min(b, Math.max(a, v));
+const smooth = (a, b, x) => { const t = clamp((x - a) / (b - a), 0, 1); return t * t * (3 - 2 * t); };
+const lifeMs = () => { const v = +$("life").value; return v > 20 ? Infinity : v * 1000; };
+
+$("life").oninput = () => {
+  $("lifeTxt").textContent = lifeMs() === Infinity ? "∞" : (lifeMs() / 1000) + "秒";
+  const now = performance.now();
+  layers.forEach(L => L.t0 = now);
+};
+
+// ---------- ink layers ----------
+function makeLayer(t) {
+  const L = pool.pop() || (() => { const c = document.createElement("canvas"); return { c, ctx: c.getContext("2d") }; })();
+  if (L.c.width !== cv.width || L.c.height !== cv.height) { L.c.width = cv.width; L.c.height = cv.height; }
+  else L.ctx.clearRect(0, 0, L.c.width, L.c.height);
+  L.t0 = t; return L;
+}
+function currentLayer(now) {
+  const life = lifeMs();
+  let L = layers[layers.length - 1];
+  if (!L || (life !== Infinity && now - L.t0 > life / BUCKETS)) { L = makeLayer(now); layers.push(L); }
+  return L;
+}
+function layerAlpha(L, now) {
+  const life = lifeMs();
+  if (life === Infinity) return 1;
+  return clamp(1 - (now - L.t0 - life / BUCKETS / 2) / life, 0, 1);
+}
+function pruneLayers(now) {
+  const keep = [];
+  for (const L of layers) (layerAlpha(L, now) > 0 ? keep : pool).push(L);
+  layers = keep;
+  if (pool.length > 4) pool.length = 4;
+}
+function clearInk() { pool.push(...layers); layers = []; brushes.clear(); }
+
+// ---------- model & camera ----------
 async function loadModel() {
   const fs = await FilesetResolver.forVisionTasks("https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14/wasm");
   const opts = (delegate) => ({
     baseOptions: { modelAssetPath: "https://storage.googleapis.com/mediapipe-models/hand_landmarker/hand_landmarker/float16/1/hand_landmarker.task", delegate },
-    runningMode: "VIDEO", numHands: 2,
-    minHandDetectionConfidence: 0.5, minTrackingConfidence: 0.5,
+    runningMode: "VIDEO", numHands: 2, minHandDetectionConfidence: 0.5, minTrackingConfidence: 0.5,
   });
   try { landmarker = await HandLandmarker.createFromOptions(fs, opts("GPU")); }
   catch { landmarker = await HandLandmarker.createFromOptions(fs, opts("CPU")); }
 }
-
 async function startCamera() {
   if (stream) stream.getTracks().forEach(t => t.stop());
   stream = await navigator.mediaDevices.getUserMedia({
@@ -93,7 +134,7 @@ async function startCamera() {
   video.srcObject = stream;
   await video.play();
   cv.width = video.videoWidth; cv.height = video.videoHeight;
-  lastVideoTime = -1;
+  lastVideoTime = -1; clearInk();
 }
 
 $("go").onclick = async () => {
@@ -104,7 +145,6 @@ $("go").onclick = async () => {
     await Promise.all([loadModel(), startCamera()]);
     $("start").classList.add("hidden");
     $("bar").classList.remove("hidden");
-    statusEl.textContent = "手を映してください";
     requestAnimationFrame(loop);
   } catch (e) {
     console.error(e);
@@ -112,17 +152,15 @@ $("go").onclick = async () => {
     $("go").disabled = false; $("go").textContent = "もう一度試す";
   }
 };
-
 $("flip").onclick = async () => {
   facing = facing === "user" ? "environment" : "user";
-  trails.clear();
-  try { await startCamera(); } catch (e) { facing = facing === "user" ? "environment" : "user"; await startCamera(); }
+  try { await startCamera(); } catch { facing = facing === "user" ? "environment" : "user"; await startCamera(); }
 };
-$("clear").onclick = () => trails.clear();
-$("point").onchange = () => trails.clear();
-
+$("clear").onclick = clearInk;
 $("save").onclick = () => {
-  cv.toBlob(b => {
+  const c = document.createElement("canvas"); c.width = cv.width; c.height = cv.height;
+  compose(c.getContext("2d"), performance.now(), false);
+  c.toBlob(b => {
     const a = document.createElement("a");
     a.href = URL.createObjectURL(b);
     a.download = "kuusho-" + new Date().toISOString().replace(/[:.]/g, "-") + ".png";
@@ -130,95 +168,131 @@ $("save").onclick = () => {
   }, "image/png");
 };
 
-function addPoint(key, x, y, t) {
-  let segs = trails.get(key);
-  if (!segs) { segs = [[]]; trails.set(key, segs); }
-  const gap = t - (lastSeen.get(key) ?? -1e9);
-  if (gap > 250 && segs[segs.length - 1].length) segs.push([]);
-  const seg = segs[segs.length - 1];
-  const prev = seg[seg.length - 1];
-  // light smoothing to reduce jitter
-  if (prev) { x = prev.x * 0.35 + x * 0.65; y = prev.y * 0.35 + y * 0.65; }
-  seg.push({ x, y, t });
-  lastSeen.set(key, t);
+// ---------- brush ----------
+function newBristles() {
+  return Array.from({ length: BRISTLES }, (_, i) => ({
+    o: (i + 0.5) / BRISTLES * 2 - 1,           // position across the brush (-1..1)
+    load: 0.3 + Math.random() * 0.7,           // how much ink this hair holds
+  }));
 }
 
-function prune(now) {
-  const life = lifeSec() * 1000;
-  if (life === Infinity) return;
-  for (const [k, segs] of trails) {
-    for (const s of segs) while (s.length && now - s[0].t > life) s.shift();
-    const kept = segs.filter((s, i) => s.length || i === segs.length - 1);
-    if (!kept.some(s => s.length) && now - (lastSeen.get(k) ?? 0) > life) trails.delete(k);
-    else trails.set(k, kept);
+// Reads one hand: brush tip = centre of the 5 fingertips, width = how spread the fingers are.
+function readHand(lm, W, H, mirror) {
+  const P = i => [(mirror ? 1 - lm[i].x : lm[i].x) * W, lm[i].y * H];
+  const tips = TIPS.map(P);
+  const cx = tips.reduce((s, p) => s + p[0], 0) / 5, cy = tips.reduce((s, p) => s + p[1], 0) / 5;
+  const [wx, wy] = P(0), [mx, my] = P(9);
+  const handSize = Math.hypot(mx - wx, my - wy) || 1;
+  const spread = tips.reduce((s, p) => s + Math.hypot(p[0] - cx, p[1] - cy), 0) / 5 / handSize;
+  const t = smooth(0.16, 0.85, spread);       // 0 = fingers pinched, 1 = fully open
+  const maxW = +$("size").value * (W / 1280);
+  return { x: cx, y: cy, w: maxW * (0.025 + 0.975 * t) };
+}
+
+function updateBrush(key, h, now) {
+  let b = brushes.get(key);
+  if (!b || now - b.t > 250) {               // new stroke when the hand reappears
+    b = { x: h.x, y: h.y, w: h.w, v: 0, t: now, nx: 0, ny: -1, hairs: newBristles() };
+    brushes.set(key, b);
+    return;
   }
+  const dt = Math.max(1, now - b.t);
+  const x = b.x * 0.45 + h.x * 0.55, y = b.y * 0.45 + h.y * 0.55, w = b.w * 0.7 + h.w * 0.3;
+  const dx = x - b.x, dy = y - b.y, d = Math.hypot(dx, dy);
+  const v = d / cv.width / (dt / 1000);      // speed in screen-widths per second
+  b.v = b.v * 0.6 + v * 0.4;
+  let nx = b.nx, ny = b.ny;
+  if (d > 0.8) { nx = -dy / d; ny = dx / d; }
+  paint(currentLayer(now).ctx, b, b.x, b.y, b.w, b.nx, b.ny, x, y, w, nx, ny);
+  Object.assign(b, { x, y, w, nx, ny, t: now });
 }
 
-function drawTrails(now) {
-  const life = lifeSec() * 1000, w = +$("width").value * (cv.width / 1280);
-  ctx.lineCap = "round"; ctx.lineJoin = "round";
-  for (const [key, segs] of trails) {
-    const color = COLORS[hashKey(key) % COLORS.length];
-    for (const s of segs) {
-      for (let i = 1; i < s.length; i++) {
-        const a = s[i - 1], b = s[i];
-        const age = life === Infinity ? 0 : (now - b.t) / life;
-        const alpha = Math.max(0, 1 - age);
-        ctx.strokeStyle = color; ctx.globalAlpha = alpha;
-        ctx.lineWidth = Math.max(1, w * (0.35 + 0.65 * alpha));
-        ctx.shadowColor = color; ctx.shadowBlur = w * 1.6;
-        ctx.beginPath(); ctx.moveTo(a.x, a.y); ctx.lineTo(b.x, b.y); ctx.stroke();
-      }
+function paint(g, b, x0, y0, w0, nx0, ny0, x1, y1, w1, nx1, ny1) {
+  const col = $("ink").value;
+  const dry = smooth(0.3, 1.4, b.v);          // fast → dry, broken hairs (kasure)
+  const wet = 1 - smooth(0.03, 0.28, b.v);    // slow → ink bleeds (nijimi)
+  const k = 1 - 0.3 * dry;                    // a fast sweep also thins the stroke
+  const hw0 = w0 * k / 2, hw1 = w1 * k / 2;
+  const hairW = Math.max(1, (w1 * k / BRISTLES) * (dry > 0.4 ? 1.4 : 2.4));
+  g.lineCap = dry > 0.4 ? "butt" : "round";
+  g.lineWidth = hairW;
+  for (const h of b.hairs) {
+    const ink = h.load * (1 - 0.45 * Math.abs(h.o)) + (Math.random() - 0.5) * 0.1;
+    if (ink < dry * 0.9) continue;            // dry hairs drop out, edges first
+    const a = (0.5 + 0.45 * Math.min(1, ink)) * (1 - 0.35 * dry);
+    g.strokeStyle = `rgba(${col},${a.toFixed(3)})`;
+    g.beginPath();
+    g.moveTo(x0 + nx0 * h.o * hw0, y0 + ny0 * h.o * hw0);
+    g.lineTo(x1 + nx1 * h.o * hw1, y1 + ny1 * h.o * hw1);
+    g.stroke();
+  }
+  if (wet > 0.03) {                           // soft halo that spreads while the brush lingers
+    const r = w1 * 0.5 * (1 + 1.2 * wet) + 2;
+    blot(g, col, x1, y1, r, 0.09 * wet);
+    const n = wet > 0.5 ? 3 : 1;
+    for (let i = 0; i < n; i++) {
+      const ang = Math.random() * Math.PI * 2, dist = r * (0.55 + Math.random() * 0.45);
+      blot(g, col, x1 + Math.cos(ang) * dist, y1 + Math.sin(ang) * dist, r * (0.25 + Math.random() * 0.3), 0.07 * wet);
     }
   }
-  ctx.globalAlpha = 1; ctx.shadowBlur = 0;
 }
-function hashKey(k) { let h = 0; for (const c of k) h = (h * 31 + c.charCodeAt(0)) >>> 0; return h; }
+function blot(g, col, x, y, r, a) {
+  const gr = g.createRadialGradient(x, y, 0, x, y, r);
+  gr.addColorStop(0, `rgba(${col},${a})`);
+  gr.addColorStop(0.55, `rgba(${col},${a * 0.6})`);
+  gr.addColorStop(1, `rgba(${col},0)`);
+  g.fillStyle = gr; g.beginPath(); g.arc(x, y, r, 0, Math.PI * 2); g.fill();
+}
+
+// ---------- render ----------
+function compose(g, now, overlay) {
+  const W = cv.width, H = cv.height, mirror = facing === "user";
+  g.globalAlpha = 1;
+  g.fillStyle = "#0e0d0c"; g.fillRect(0, 0, W, H);
+  if ($("showVideo").checked) {
+    g.save();
+    if (mirror) { g.translate(W, 0); g.scale(-1, 1); }
+    g.drawImage(video, 0, 0, W, H);
+    g.restore();
+  }
+  for (const L of layers) { g.globalAlpha = layerAlpha(L, now); g.drawImage(L.c, 0, 0); }
+  g.globalAlpha = 1;
+  if (!overlay) return;
+  const s = W / 1280;
+  if ($("showSkel").checked) {
+    g.strokeStyle = "rgba(255,255,255,.6)"; g.lineWidth = 2 * s; g.fillStyle = "#fff";
+    for (const lm of lastHands) {
+      const P = p => [(mirror ? 1 - p.x : p.x) * W, p.y * H];
+      for (const c of CONNECTIONS) {
+        const [x1, y1] = P(lm[c.start]), [x2, y2] = P(lm[c.end]);
+        g.beginPath(); g.moveTo(x1, y1); g.lineTo(x2, y2); g.stroke();
+      }
+      for (const p of lm) { const [x, y] = P(p); g.beginPath(); g.arc(x, y, 3 * s, 0, 7); g.fill(); }
+    }
+  }
+  // brush-size ring so you can see how wide the next stroke will be
+  g.lineWidth = 1.5 * s; g.strokeStyle = "rgba(255,255,255,.45)";
+  for (const b of brushes.values()) {
+    if (now - b.t > 120) continue;
+    g.beginPath(); g.arc(b.x, b.y, Math.max(2, b.w / 2), 0, Math.PI * 2); g.stroke();
+  }
+}
 
 function loop() {
   const now = performance.now();
-  const W = cv.width, H = cv.height, mirror = facing === "user";
-  ctx.setTransform(1, 0, 0, 1, 0, 0);
-  ctx.fillStyle = "#0b0d12"; ctx.fillRect(0, 0, W, H);
-  if ($("showVideo").checked) {
-    ctx.save();
-    if (mirror) { ctx.translate(W, 0); ctx.scale(-1, 1); }
-    ctx.drawImage(video, 0, 0, W, H);
-    ctx.restore();
-  }
-
-  let result = null;
   if (landmarker && video.readyState >= 2 && video.currentTime !== lastVideoTime) {
     lastVideoTime = video.currentTime;
-    result = landmarker.detectForVideo(video, now);
-    const sel = $("point").value;
-    const idxs = sel === "tips" ? [4, 8, 12, 16, 20] : [+sel];
-    const hands = result.landmarks || [];
-    hands.forEach((lm, h) => {
-      const side = result.handedness?.[h]?.[0]?.categoryName || ("H" + h);
-      idxs.forEach(i => {
-        const p = lm[i];
-        const x = (mirror ? 1 - p.x : p.x) * W, y = p.y * H;
-        addPoint(side + ":" + i, x, y, now);
-      });
+    const res = landmarker.detectForVideo(video, now);
+    lastHands = res.landmarks || [];
+    const mirror = facing === "user";
+    lastHands.forEach((lm, i) => {
+      const key = res.handedness?.[i]?.[0]?.categoryName || ("H" + i);
+      updateBrush(key, readHand(lm, cv.width, cv.height, mirror), now);
     });
-    statusEl.textContent = hands.length ? `検出中：手 ${hands.length} 本` : "手を映してください";
-
-    if ($("showSkel").checked) {
-      ctx.strokeStyle = "rgba(255,255,255,.7)"; ctx.lineWidth = 2 * (W / 1280);
-      for (const lm of hands) {
-        const P = p => [(mirror ? 1 - p.x : p.x) * W, p.y * H];
-        for (const c of CONNECTIONS) {
-          const [x1, y1] = P(lm[c.start]), [x2, y2] = P(lm[c.end]);
-          ctx.beginPath(); ctx.moveTo(x1, y1); ctx.lineTo(x2, y2); ctx.stroke();
-        }
-        ctx.fillStyle = "#fff";
-        for (const p of lm) { const [x, y] = P(p); ctx.beginPath(); ctx.arc(x, y, 3 * (W / 1280), 0, 7); ctx.fill(); }
-      }
-    }
+    statusEl.textContent = lastHands.length ? `筆 ${lastHands.length} 本` : "手を映してください";
   }
-  prune(now);
-  drawTrails(now);
+  pruneLayers(now);
+  compose(ctx, now, true);
   requestAnimationFrame(loop);
 }
 </script>
