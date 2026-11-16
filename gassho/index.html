@@ -430,6 +430,9 @@ $("invite").onclick = async () => {
   } catch {}
 };
 function onMsg(m) {
+  try { handleMsg(m); } catch (e) { console.error(e); }
+}
+function handleMsg(m) {
   if (!m || typeof m !== "object") return;
   if (m.t === "start") remoteStart();
   else if (m.t === "b") onPeerBrush(m);
@@ -448,24 +451,39 @@ async function loadModel() {
   try { landmarker = await HandLandmarker.createFromOptions(fs, opts("GPU")); }
   catch { landmarker = await HandLandmarker.createFromOptions(fs, opts("CPU")); }
 }
+let camGen = 0, camStarting = false;
 async function startCamera() {
+  const gen = ++camGen;
   stopCamera();
   if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
     const e = new Error("getUserMedia is not available"); e.name = "NoMediaDevices"; throw e;
   }
+  camStarting = true;
   try {
-    stream = await navigator.mediaDevices.getUserMedia({
-      video: { facingMode: facing, width: { ideal: 1280 }, height: { ideal: 720 }, frameRate: { ideal: 60 } }, audio: false });
-  } catch (e) {
-    // some tablets reject the detailed request; try once more with the simplest one
-    if (e.name !== "OverconstrainedError" && e.name !== "NotReadableError" && e.name !== "AbortError") throw e;
-    stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: false });
-  }
-  video.srcObject = stream;
-  await video.play();
-  cv.width = ink.width = video.videoWidth; cv.height = ink.height = video.videoHeight;
-  lastVideoTime = -1;
-  updateFlip();
+    let st;
+    try {
+      st = await navigator.mediaDevices.getUserMedia({
+        video: { facingMode: facing, width: { ideal: 1280 }, height: { ideal: 720 }, frameRate: { ideal: 60 } }, audio: false });
+    } catch (e) {
+      // some tablets reject the detailed request; try once more with the simplest one
+      if (e.name !== "OverconstrainedError" && e.name !== "NotReadableError" && e.name !== "AbortError") throw e;
+      st = await navigator.mediaDevices.getUserMedia({ video: true, audio: false });
+    }
+    if (gen !== camGen) { st.getTracks().forEach(t => t.stop()); return; }   // a newer start took over
+    stream = st; camLost = false;
+    st.getVideoTracks().forEach(t => t.addEventListener("ended", () => { if (stream === st) camLost = true; }));
+    video.srcObject = st;
+    try { await video.play(); }
+    catch (e) { if (gen !== camGen) return; throw e; }
+    if (gen !== camGen) return;
+    lastFrameAt = performance.now();
+    // resizing a canvas wipes it, so only do it when the size really changed (keeps the ink after a restart)
+    if (cv.width !== video.videoWidth || cv.height !== video.videoHeight) {
+      cv.width = ink.width = video.videoWidth; cv.height = ink.height = video.videoHeight;
+    }
+    lastVideoTime = -1;
+    updateFlip();
+  } finally { if (gen === camGen) camStarting = false; }
 }
 // PC usually has one webcam: hide the camera-switch button when there is nothing to switch to
 async function updateFlip() {
@@ -501,7 +519,7 @@ async function startApp(kind, code) {
     $("start").classList.add("hidden");
     setMode("ready");
     if (kind === "host") setupHost(); else setupJoin(code);
-    requestAnimationFrame(loop);
+    kickLoop();
   } catch (e) {
     console.error(e);
     stopCamera();
@@ -565,7 +583,7 @@ $("rec").onclick = () => beginCount(false);
 async function backToCamera() {
   clearScene();
   setMode("ready");
-  try { await startCamera(); requestAnimationFrame(loop); }
+  try { await startCamera(); kickLoop(); }
   catch (e) { statusEl.textContent = "カメラを起動できませんでした"; e.isCamera = true; showStartError(e, backToCamera); }
 }
 $("again").onclick = () => { unlockAudio(); backToCamera(); };
@@ -722,24 +740,74 @@ function compose(now) {
   for (const s of peerLive.values()) if (now - s.t < 250) ringOf(s, s.col);
 }
 
+// one loop at a time; an error in a frame must never stop the camera loop
+let looping = false, lastFrameAt = 0, camLost = false, camFixAt = 0;
+function safe(f) { try { f(); } catch (e) { reportErr("sound", e); } }
+function kickLoop() { if (!looping) { looping = true; requestAnimationFrame(loop); } }
+let lastLoopAt = 0;
 function loop() {
-  if (mode === "view" || mode === "idle") return;
+  if (mode === "view" || mode === "idle") { looping = false; return; }
+  lastLoopAt = performance.now();
+  try { frame(); } catch (e) { reportErr("loop", e); }
+  if (mode === "view" || mode === "idle") { looping = false; return; }
+  requestAnimationFrame(loop);
+}
+// camera watchdog: if the picture freezes (track ended, video paused by the OS, tab came back), bring it back
+function keepCameraAlive(now) {
+  if (video.paused && stream) video.play().catch(() => {});
+  const track = stream && stream.getVideoTracks()[0];
+  const dead = !stream || camLost || !track || track.readyState === "ended";
+  const frozen = now - lastFrameAt > 2000;
+  if (!camStarting && (dead || frozen) && now - camFixAt > 4000) {
+    camFixAt = now; camLost = false;
+    startCamera().catch(e => console.error("camera restart failed", e));
+  }
+}
+function frame() {
   const now = performance.now();
   if (mode === "count") {
     const left = 3 - Math.floor((now - modeT0) / 1000);
-    if (left !== lastCount) { lastCount = left; if (left > 0) beep(72); }
+    if (left !== lastCount) { lastCount = left; if (left > 0) safe(() => beep(72)); }
     timerEl.textContent = left > 0 ? left : "GO!";
-    if (left <= 0) { beep(84, 0.35, 0.3); live.clear(); peerLive.clear(); setMode("rec"); beatOn(); }
+    if (left <= 0) { safe(() => beep(84, 0.35, 0.3)); live.clear(); peerLive.clear(); setMode("rec"); safe(beatOn); }
   } else if (mode === "rec") {
     const left = Math.max(0, REC_SEC - (now - modeT0) / 1000);
     const sec = Math.ceil(left);
     timerEl.textContent = sec;
-    if (sec <= 3 && sec !== lastCount && sec > 0) { lastCount = sec; beep(79, 0.1, 0.15); }
+    if (sec <= 3 && sec !== lastCount && sec > 0) { lastCount = sec; safe(() => beep(79, 0.1, 0.15)); }
     if (left <= 0) { finish(); return; }
   }
+  try { keepCameraAlive(now); } catch (e) { reportErr("cam", e); }
+  try { detect(now); } catch (e) { reportErr("hand", e); detectFails++; if (detectFails === 20) switchToCPU(); }
+  try { together(now); } catch (e) { reportErr("sync", e); }
+  try { compose(now); } catch (e) { reportErr("draw", e); }
+}
+// hand tracking; if it keeps failing on a phone's GPU, rebuild it on the CPU
+let detectFails = 0, lastDetectTs = 0, cpuMode = false;
+async function switchToCPU() {
+  if (cpuMode) return; cpuMode = true;
+  try {
+    const fs = await FilesetResolver.forVisionTasks("https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14/wasm");
+    const next = await HandLandmarker.createFromOptions(fs, {
+      baseOptions: { modelAssetPath: "https://storage.googleapis.com/mediapipe-models/hand_landmarker/hand_landmarker/float16/1/hand_landmarker.task", delegate: "CPU" },
+      runningMode: "VIDEO", numHands: 2, minHandDetectionConfidence: 0.4, minHandPresenceConfidence: 0.3, minTrackingConfidence: 0.3 });
+    landmarker = next; detectFails = 0; lastDetectTs = 0;
+  } catch (e) { reportErr("cpu", e); }
+}
+// show a short code on screen so a problem on someone's phone can be reported
+let errShownAt = 0;
+function reportErr(where, e) {
+  console.error(where, e);
+  const now = performance.now();
+  if (now - errShownAt < 3000) return; errShownAt = now;
+  toast("⚠️ " + where + ": " + String(e && (e.name || "") + " " + (e.message || e)).slice(0, 60));
+}
+function detect(now) {
   if (landmarker && video.readyState >= 2 && video.currentTime !== lastVideoTime) {
-    lastVideoTime = video.currentTime;
-    const res = landmarker.detectForVideo(video, now);
+    lastVideoTime = video.currentTime; lastFrameAt = now;
+    const ts = Math.max(now, lastDetectTs + 1); lastDetectTs = ts;   // timestamps must keep going up
+    const res = landmarker.detectForVideo(video, ts);
+    detectFails = 0;
     const hands = res.landmarks || [];
     const mirror = facing === "user";
     hands.forEach((lm, i) => {
@@ -750,10 +818,15 @@ function loop() {
     statusEl.textContent = mode === "rec" ? (anyFist ? "✊ ストップ中" : "✋ 書いてる！") :
       hands.length ? "手をうごかすと音が鳴るよ。準備できたら「書きはじめる！」" : "手をカメラに映してね";
   }
-  together(now);
-  compose(now);
-  requestAnimationFrame(loop);
 }
+// if the browser ever stops calling the loop while the page is on screen, start it again
+setInterval(() => {
+  if (mode === "view" || mode === "idle" || document.visibilityState !== "visible") return;
+  if (performance.now() - lastLoopAt > 700) { looping = false; kickLoop(); }
+}, 300);
+document.addEventListener("visibilitychange", () => {
+  if (document.visibilityState === "visible" && mode !== "view" && mode !== "idle") { lastFrameAt = 0; kickLoop(); }
+});
 
 // ======================================================================
 // 3D viewer — glossy candy tubes
@@ -847,7 +920,7 @@ function finish() {
   const usable = strokes.filter(s => s.samples.length >= 2);
   if (!usable.length) {
     setMode("ready"); statusEl.textContent = "線が書けてなかったみたい。もう一回！";
-    startCamera().then(() => requestAnimationFrame(loop));
+    startCamera().then(() => kickLoop());
     return;
   }
   fanfare();
