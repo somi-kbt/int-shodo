@@ -65,6 +65,7 @@ export default async function handler(req, res) {
         const r = await fetch(b.url, { cache: 'no-store' });
         if (!r.ok) return res.status(502).json({ error: '曲を取得できませんでした' });
         res.setHeader('Content-Type', 'audio/midi');
+        res.setHeader('Cache-Control', 'public, max-age=86400, immutable');
         return res.status(200).send(Buffer.from(await r.arrayBuffer()));
       }
       const { songs } = await readIndex();
