@@ -2,13 +2,13 @@
 <html lang="ja">
 <head>
 <meta charset="utf-8">
-<meta name="version" content="0.1">
+<meta name="version" content="0.2">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="theme-color" content="#f3ede1">
-<title>chirashi 散らし – 短歌を万葉がなで散らし書きに v0.1</title>
+<title>chirashi 散らし – 短歌を万葉がなで散らし書きに v0.2</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Yuji+Syuku&family=Yuji+Boku&family=Yuji+Mai&family=Shippori+Mincho:wght@500&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Yuji+Syuku&family=Yuji+Boku&family=Yuji+Mai&family=Shippori+Mincho:wght@500&family=Noto+Serif+Hentaigana:wght@700&display=swap" rel="stylesheet">
 <style>
   :root { --bg:#f3ede1; --fg:#2a241d; --mute:#8a7f70; --line:rgba(42,36,29,.16); --acc:#b23a24; --card:#fffaf0; }
   * { box-sizing:border-box; -webkit-tap-highlight-color:transparent; }
@@ -40,7 +40,7 @@
   .used { display:flex; flex-wrap:wrap; gap:6px; }
   .used span { display:inline-flex; flex-direction:column; align-items:center; min-width:44px; padding:6px 6px 4px;
     background:var(--card); border:1px solid var(--line); border-radius:10px; }
-  .used b { font-family:var(--brush, "Yuji Syuku"),serif; font-weight:400; font-size:24px; line-height:1.2; }
+  .used b { font-family:var(--brush, "Yuji Syuku"),"Noto Serif Hentaigana",serif; font-weight:400; font-size:24px; line-height:1.2; }
   .used i { font-style:normal; font-size:11px; color:var(--mute); }
   .about { font-size:12px; color:var(--mute); line-height:1.9; margin-top:24px; }
   #toast { position:fixed; left:50%; bottom:calc(22px + env(safe-area-inset-bottom)); transform:translateX(-50%);
@@ -51,15 +51,16 @@
 </head>
 <body>
 <main>
-  <header><h1>散らし<small>CHIRASHI</small></h1><span class="ver">v0.1</span></header>
-  <p class="lead">短歌を書くと、ひらがなを万葉がなに置き換えて、色紙や短冊に散らし書きします。漢字はそのまま残ります。</p>
+  <header><h1>散らし<small>CHIRASHI</small></h1><span class="ver">v0.2</span></header>
+  <p class="lead">短歌を書くと、ひらがなを変体仮名や万葉がなに置き換えて、色紙や短冊に散らし書きします。漢字はそのまま残ります。</p>
 
   <textarea id="src" spellcheck="false">秋の田の かりほの庵の 苫をあらみ わが衣手は 露にぬれつつ</textarea>
-  <div class="hint">句の切れ目に空白を入れると、そこで行が分かれやすくなります。カタカナはひらがなとして扱います。<br>できあがった字をタップすると、別の万葉がなに切り替わります。</div>
+  <div class="hint">句の切れ目に空白を入れると、そこで行が分かれやすくなります。カタカナはひらがなとして扱います。<br>できあがった字をタップすると、別の字母の字に切り替わります。</div>
 
   <div class="ctl"><span class="lab">料紙</span><div class="seg" id="paper"></div></div>
   <div class="ctl"><span class="lab">構成</span><div class="seg" id="layout"></div></div>
   <div class="ctl"><span class="lab">書体</span><div class="seg" id="font"></div></div>
+  <div class="ctl"><span class="lab">かな</span><div class="seg" id="kana"></div></div>
   <div class="ctl"><span class="lab">字母</span><div class="seg" id="mode"></div></div>
   <div class="ctl"><span class="lab">字形</span><div class="seg" id="warp"></div></div>
 
@@ -69,10 +70,10 @@
     <button id="save" class="main">画像を保存</button>
   </div>
 
-  <h2>使った万葉がな</h2>
+  <h2>使った字と字母</h2>
   <div class="used" id="used"></div>
 
-  <p class="about">万葉がなは、漢字の音を借りてかなを表した文字です。平安時代のかな書では、同じ音でも元の漢字（字母）を変えて書き、紙面に変化をつけました。ここでは字母の候補から選んで並べています。筆文字はフォントによる表示なので、作品の構成を考える下書きとしてお使いください。濁点は古い書き方にならって付けていません。</p>
+  <p class="about">万葉がなは、漢字の音を借りてかなを表した文字です。平安時代のかな書では、同じ音でも元の漢字（字母）を変えて書き、紙面に変化をつけました。ここでは字母の候補から選んで並べています。「崩した仮名」では、Unicodeに登録された変体仮名（Noto Serif Hentaigana）で表示します。筆文字はフォントによる表示なので、作品の構成を考える下書きとしてお使いください。濁点は古い書き方にならって付けていません。</p>
 </main>
 <div id="toast"></div>
 
@@ -91,6 +92,8 @@ const JIBO = {
   'ら':'良羅','り':'利里理','る':'留流類','れ':'礼連麗','ろ':'呂路露',
   'わ':'和王','ゐ':'為井','ゑ':'恵衛','を':'遠越乎','ん':'无'
 };
+// 変体仮名（Unicode の変体仮名と、その元になった漢字）
+const HENTAI = {"あ":[["𛀂","安"],["𛀃","愛"],["𛀄","阿"],["𛀅","惡"]],"を":[["𛀅","惡"],["𛄖","乎"],["𛄗","乎"],["𛄘","尾"],["𛄙","緒"],["𛄚","越"],["𛄛","遠"],["𛄜","遠"]],"い":[["𛀆","以"],["𛀇","伊"],["𛀈","意"],["𛀉","移"]],"う":[["𛀊","宇"],["𛀋","宇"],["𛀌","憂"],["𛀍","有"],["𛀎","雲"]],"え":[["𛀏","盈"],["𛀐","縁"],["𛀑","衣"],["𛀒","衣"],["𛀓","要"]],"お":[["𛀔","於"],["𛀕","於"],["𛀖","隱"]],"か":[["𛀗","佳"],["𛀘","加"],["𛀙","可"],["𛀚","可"],["𛀛","嘉"],["𛀜","我"],["𛀝","歟"],["𛀞","賀"],["𛀟","閑"],["𛀠","香"],["𛀡","駕"],["𛀢","家"]],"け":[["𛀢","家"],["𛀲","介"],["𛀳","介"],["𛀴","希"],["𛀵","氣"],["𛀶","計"],["𛀷","遣"]],"き":[["𛀣","喜"],["𛀤","幾"],["𛀥","幾"],["𛀦","支"],["𛀧","木"],["𛀨","祈"],["𛀩","貴"],["𛀪","起"],["𛀻","期"]],"く":[["𛀫","久"],["𛀬","久"],["𛀭","九"],["𛀮","供"],["𛀯","倶"],["𛀰","具"],["𛀱","求"]],"こ":[["𛀸","古"],["𛀹","故"],["𛀺","許"],["𛀻","期"],["𛂘","子"]],"さ":[["𛀼","乍"],["𛀽","佐"],["𛀾","佐"],["𛀿","左"],["𛁀","差"],["𛁁","散"],["𛁂","斜"],["𛁃","沙"]],"し":[["𛁄","之"],["𛁅","之"],["𛁆","事"],["𛁇","四"],["𛁈","志"],["𛁉","新"]],"す":[["𛁊","受"],["𛁋","壽"],["𛁌","數"],["𛁍","數"],["𛁎","春"],["𛁏","春"],["𛁐","須"],["𛁑","須"]],"せ":[["𛁒","世"],["𛁓","世"],["𛁔","世"],["𛁕","勢"],["𛁖","聲"]],"そ":[["𛁗","所"],["𛁘","所"],["𛁙","曾"],["𛁚","曾"],["𛁛","楚"],["𛁜","蘇"],["𛁝","處"]],"た":[["𛁞","堂"],["𛁟","多"],["𛁠","多"],["𛁡","當"]],"ち":[["𛁢","千"],["𛁣","地"],["𛁤","智"],["𛁥","知"],["𛁦","知"],["𛁧","致"],["𛁨","遲"]],"つ":[["𛁩","川"],["𛁪","川"],["𛁫","津"],["𛁬","都"],["𛁭","徒"]],"と":[["𛁭","徒"],["𛁷","土"],["𛁸","度"],["𛁹","東"],["𛁺","登"],["𛁻","登"],["𛁼","砥"],["𛁽","等"]],"て":[["𛁮","亭"],["𛁯","低"],["𛁰","傳"],["𛁱","天"],["𛁲","天"],["𛁳","天"],["𛁴","帝"],["𛁵","弖"],["𛁶","轉"],["𛂎","而"]],"ら":[["𛁽","等"],["𛃭","羅"],["𛃮","良"],["𛃯","良"],["𛃰","良"]],"な":[["𛁾","南"],["𛁿","名"],["𛂀","奈"],["𛂁","奈"],["𛂂","奈"],["𛂃","菜"],["𛂄","那"],["𛂅","那"],["𛂆","難"]],"に":[["𛂇","丹"],["𛂈","二"],["𛂉","仁"],["𛂊","兒"],["𛂋","爾"],["𛂌","爾"],["𛂍","耳"],["𛂎","而"]],"ぬ":[["𛂏","努"],["𛂐","奴"],["𛂑","怒"]],"ね":[["𛂒","年"],["𛂓","年"],["𛂔","年"],["𛂕","根"],["𛂖","熱"],["𛂗","禰"],["𛂘","子"]],"の":[["𛂙","乃"],["𛂚","濃"],["𛂛","能"],["𛂜","能"],["𛂝","農"]],"は":[["𛂞","八"],["𛂟","半"],["𛂠","婆"],["𛂡","波"],["𛂢","盤"],["𛂣","盤"],["𛂤","破"],["𛂥","者"],["𛂦","者"],["𛂧","葉"],["𛂨","頗"]],"ひ":[["𛂩","悲"],["𛂪","日"],["𛂫","比"],["𛂬","避"],["𛂭","非"],["𛂮","飛"],["𛂯","飛"]],"ふ":[["𛂰","不"],["𛂱","婦"],["𛂲","布"]],"へ":[["𛂳","倍"],["𛂴","弊"],["𛂵","弊"],["𛂶","遍"],["𛂷","邊"],["𛂸","邊"],["𛂹","部"]],"ほ":[["𛂺","保"],["𛂻","保"],["𛂼","報"],["𛂽","奉"],["𛂾","寶"],["𛂿","本"],["𛃀","本"],["𛃁","豐"]],"ま":[["𛃂","万"],["𛃃","末"],["𛃄","末"],["𛃅","滿"],["𛃆","滿"],["𛃇","萬"],["𛃈","麻"],["𛃖","馬"]],"み":[["𛃉","三"],["𛃊","微"],["𛃋","美"],["𛃌","美"],["𛃍","美"],["𛃎","見"],["𛃏","身"]],"む":[["𛃐","武"],["𛃑","無"],["𛃒","牟"],["𛃓","舞"]],"め":[["𛃔","免"],["𛃕","面"],["𛃖","馬"]],"も":[["𛃗","母"],["𛃘","毛"],["𛃙","毛"],["𛃚","毛"],["𛃛","茂"],["𛃜","裳"]],"や":[["𛃝","也"],["𛃞","也"],["𛃟","屋"],["𛃠","耶"],["𛃡","耶"],["𛃢","夜"]],"よ":[["𛃢","夜"],["𛃧","代"],["𛃨","余"],["𛃩","與"],["𛃪","與"],["𛃫","與"],["𛃬","餘"]],"ゆ":[["𛃣","游"],["𛃤","由"],["𛃥","由"],["𛃦","遊"]],"り":[["𛃱","利"],["𛃲","利"],["𛃳","李"],["𛃴","梨"],["𛃵","理"],["𛃶","里"],["𛃷","離"]],"る":[["𛃸","流"],["𛃹","留"],["𛃺","留"],["𛃻","留"],["𛃼","累"],["𛃽","類"]],"れ":[["𛃾","禮"],["𛃿","禮"],["𛄀","連"],["𛄁","麗"]],"ろ":[["𛄂","呂"],["𛄃","呂"],["𛄄","婁"],["𛄅","樓"],["𛄆","路"],["𛄇","露"]],"わ":[["𛄈","倭"],["𛄉","和"],["𛄊","和"],["𛄋","王"],["𛄌","王"]],"ゐ":[["𛄍","井"],["𛄎","井"],["𛄏","居"],["𛄐","爲"],["𛄑","遺"]],"ゑ":[["𛄒","惠"],["𛄓","衞"],["𛄔","衞"],["𛄕","衞"]],"ん":[["𛄝","无"],["𛄞","无"]]};
 const SMALL = { 'ぁ':'あ','ぃ':'い','ぅ':'う','ぇ':'え','ぉ':'お','っ':'つ','ゃ':'や','ゅ':'ゆ','ょ':'よ','ゎ':'わ','ゕ':'か','ゖ':'け' };
 
 // 一字をひらがなの基本形に（濁点・半濁点・小書き・カタカナを外す）
@@ -137,6 +140,10 @@ const WARPS = [
   { name:'控えめ',   k:.6 },
   { name:'大胆',     k:1 },
 ];
+const KANAS = [
+  { name:'変体仮名', id:'hentai' },
+  { name:'万葉がな', id:'kanji' },
+];
 const MODES = [
   { name:'変化をつける', id:'vary' },
   { name:'基本の字母',   id:'base' },
@@ -150,6 +157,7 @@ const st = {
   layout: +store.get('layout', 0),
   font: +store.get('font', 0),
   mode: store.get('mode', 'vary'),
+  kana: store.get('kana', 'hentai'),
   warp: +store.get('warp', 1),
   seed: 7,
   pick: {},            // 何字目の字母を手で選んだか { index: 候補番号 }
@@ -166,6 +174,18 @@ function toast(msg) {
   clearTimeout(toast.id); toast.id = setTimeout(() => t.classList.remove('show'), 1800);
 }
 
+// ---------- 字の候補 { ch:表示する字, jibo:元の漢字 } ----------
+function candidates(k) {
+  const jibo = [...JIBO[k]];
+  if (st.kana === 'hentai') {
+    const list = [{ ch: k, jibo: jibo[0] }];                       // 今のひらがな
+    (HENTAI[k] || []).forEach(([g, j]) => list.push({ ch: g, jibo: j }));
+    return list;
+  }
+  return jibo.map(j => ({ ch: j, jibo: j }));
+}
+const isHentai = ch => ch.codePointAt(0) >= 0x1B000;
+
 // ---------- 入力 → 文字列 ----------
 // 返り値: [{ ch:表示する字, kana:元のかな|null, idx:入力の何字目か, br:句の切れ目の直後か }]
 function convert(text) {
@@ -177,11 +197,19 @@ function convert(text) {
     if (ch === 'ー' || ch === '〜') continue;
     const k = baseKana(ch);
     if (k) {
-      const cands = JIBO[k];
+      const cands = candidates(k);
       let n = 0;
-      if (st.mode === 'vary') { n = (seen[k] || 0) % cands.length; seen[k] = (seen[k] || 0) + 1; }
+      if (st.mode === 'vary') {
+        if (st.kana === 'hentai') {
+          // 半分ほどは今のひらがな、残りは変体仮名から。同じ字が続かないようにする
+          const r = rnd1(st.seed * 31 + i * 7919);
+          n = r < .45 ? 0 : 1 + Math.floor(rnd1(i * 104729 + st.seed) * (cands.length - 1));
+          if (seen[k] === n && cands.length > 1) n = (n + 1) % cands.length;
+          seen[k] = n;
+        } else { n = (seen[k] || 0) % cands.length; seen[k] = (seen[k] || 0) + 1; }
+      }
       if (st.pick[i] != null) n = st.pick[i] % cands.length;
-      out.push({ ch: [...cands][n], kana: k, idx: i, br });
+      out.push({ ch: cands[n].ch, jibo: cands[n].jibo, kana: k, idx: i, br });
     } else {
       out.push({ ch, kana: null, idx: i, br });
     }
@@ -215,6 +243,7 @@ function splitColumns(chars, cols) {
 }
 
 // ---------- 乱数（揺らぎ用） ----------
+function rnd1(seed) { const g = rng(seed); g(); g(); return g(); }
 function rng(seed) { let s = seed >>> 0 || 1; return () => (s = (s * 1664525 + 1013904223) >>> 0) / 4294967296; }
 
 // ---------- 字形の変形（縦長・横長・台形・菱形・傾き） ----------
@@ -237,7 +266,7 @@ function drawGlyph(ch, x, y, fs, font, rot, sh) {
   const S = Math.ceil(fs * 1.6);
   if (glyph.width !== S) { glyph.width = S; glyph.height = S; } else gx.clearRect(0, 0, S, S);
   gx.textAlign = 'center'; gx.textBaseline = 'middle';
-  gx.fillStyle = '#1d1915'; gx.font = `${fs}px ${font}`;
+  gx.fillStyle = '#1d1915'; gx.font = font;
   gx.fillText(ch, S / 2, S / 2);
   cx.save();
   cx.translate(x, y); cx.rotate(rot);
@@ -281,7 +310,8 @@ async function draw() {
   const cols = splitColumns(chars, L.cols);
   const spec = L.cols.slice(0, cols.length);
 
-  try { await document.fonts.load(`40px "${F.css}"`, chars.map(c => c.ch).join('') || '安'); } catch {}
+  const txt = chars.map(c => c.ch).join('') || '安';
+  try { await Promise.all([document.fonts.load(`40px "${F.css}"`, txt), document.fonts.load(`700 40px "Noto Serif Hentaigana"`, txt)]); } catch {}
 
   cv.width = P.w; cv.height = P.h;
   paperBg(P);
@@ -317,8 +347,9 @@ async function draw() {
       const sh = pickShape(rs, WARPS[st.warp].k, !!c.kana);
       const hh = size * adv(c) * (1 + (sh.sy - 1) * .6) * (1 + (r() - .5) * .08);
       y += hh / 2;
-      drawGlyph(c.ch, x + dx, y, fs, `"${F.css}", "Yuji Syuku", serif`, rot, sh);
-      hits.push({ x: x + dx, y, r: fs * .55, idx: c.idx, kana: c.kana, ch: c.ch });
+      const font = isHentai(c.ch) ? `700 ${fs * .92}px "Noto Serif Hentaigana", serif` : `${fs}px "${F.css}", "Yuji Syuku", serif`;
+      drawGlyph(c.ch, x + dx, y, fs, font, rot, sh);
+      hits.push({ x: x + dx, y, r: fs * .55, idx: c.idx, kana: c.kana, ch: c.ch, jibo: c.jibo });
       y += hh / 2;
       x += (r() - .5) * size * .05;     // 行がわずかに揺れる
     });
@@ -340,12 +371,12 @@ async function draw() {
 function renderUsed(chars) {
   const u = $('used'); u.innerHTML = '';
   const map = new Map();
-  chars.forEach(c => { if (c.kana) map.set(c.ch, c.kana); });
+  chars.forEach(c => { if (c.kana) map.set(c.ch, c); });
   if (!map.size) { u.innerHTML = '<span style="border:0;background:none;color:var(--mute);font-size:13px">ひらがなが入ると、ここに字母が並びます</span>'; return; }
   document.documentElement.style.setProperty('--brush', `"${FONTS[st.font].css}"`);
-  for (const [ch, k] of map) {
+  for (const [ch, c] of map) {
     const s = document.createElement('span');
-    s.innerHTML = `<b>${ch}</b><i>${k}</i>`;
+    s.innerHTML = `<b>${ch}</b><i>${c.kana}・${c.jibo}</i>`;
     u.appendChild(s);
   }
 }
@@ -359,12 +390,12 @@ cv.addEventListener('click', e => {
   hits.forEach(h => { const d = Math.hypot(h.x - x, h.y - y); if (d < h.r * 1.2 && d < bd) { bd = d; best = h; } });
   if (!best) return;
   if (!best.kana) { toast(`「${best.ch}」は漢字のまま書いています`); return; }
-  const cands = [...JIBO[best.kana]];
-  const cur = cands.indexOf(best.ch);
+  const cands = candidates(best.kana);
+  const cur = cands.findIndex(c => c.ch === best.ch);
   const next = (cur + 1) % cands.length;
   st.pick[best.idx] = next;
   draw();
-  toast(cands.length > 1 ? `${best.kana}：${cands.map((c, i) => i === next ? `［${c}］` : c).join(' ')}` : `${best.kana} の字母は「${cands[0]}」だけです`);
+  toast(cands.length > 1 ? `${best.kana}（${next + 1}/${cands.length}）字母「${cands[next].jibo}」` : `${best.kana} の字母は「${cands[0].jibo}」だけです`);
 });
 
 // ---------- 操作 ----------
@@ -383,6 +414,7 @@ function renderControls() {
   buttons($('layout'), LAYOUTS[st.paper], (it, i) => i === st.layout, (it, i) => { st.layout = i; store.set('layout', i); });
   buttons($('font'), FONTS, (it, i) => i === st.font, (it, i) => { st.font = i; store.set('font', i); });
   buttons($('warp'), WARPS, (it, i) => i === st.warp, (it, i) => { st.warp = i; store.set('warp', i); });
+  buttons($('kana'), KANAS, it => it.id === st.kana, it => { st.kana = it.id; st.pick = {}; store.set('kana', it.id); });
   buttons($('mode'), MODES, it => it.id === st.mode, it => { st.mode = it.id; st.pick = {}; store.set('mode', it.id); });
 }
 
