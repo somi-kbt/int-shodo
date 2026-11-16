@@ -106,7 +106,7 @@
   <label>奥行き <input id="depth" type="range" min="0" max="40" value="15"></label>
   <label><input id="autoRot" type="checkbox" checked> くるくる</label>
   <button id="front">正面</button>
-  <button id="save">📷 保存</button>
+  <button id="save">🧊 3Dプリント用（2色）</button>
   <button id="again" class="go">もう一回！</button>
 </div>
 
@@ -802,6 +802,7 @@ function finish() {
   pg.setAttribute("position", new THREE.Float32BufferAttribute(sp, 3));
   pg.setAttribute("color", new THREE.Float32BufferAttribute(sc, 3));
   group.add(new THREE.Points(pg, new THREE.PointsMaterial({ size: viewSpan * 0.012, vertexColors: true, transparent: true, opacity: 0.85 })));
+  lastPrint = usable;
   group.scale.z = +$("depth").value / 10;
   setMode("view");
   resize3(); frontView();
@@ -817,15 +818,161 @@ function frontView() {
   const d = viewSpan / (2 * Math.tan(THREE.MathUtils.degToRad(camera3.fov) / 2)) * 1.35 / Math.min(1, camera3.aspect);
   camera3.position.set(0, 0, d); controls.update();
 }
-$("save").onclick = () => {
-  renderer.render(scene, camera3);
-  renderer.domElement.toBlob(b => {
-    const a = document.createElement("a");
-    a.href = URL.createObjectURL(b);
-    a.download = "gassho-3d-" + new Date().toISOString().replace(/[:.]/g, "-") + ".png";
-    a.click(); setTimeout(() => URL.revokeObjectURL(a.href), 2000);
-  }, "image/png");
-};
+// ======================================================================
+// 3D printing: export the strokes as a closed STL, sized for a printer.
+// Each stroke becomes a round tube capped at both ends. Thin strokes are thickened to MIN_R so they print.
+// ======================================================================
+const PRINT_SIZE = 100;                      // mm along the longest side
+const MIN_R = 0.9;                           // mm: thinnest tube radius that prints reliably
+let lastPrint = null;                        // strokes of the piece now on screen
+function printTube(S, M = 24) {
+  const n = S.length, V = THREE.Vector3;
+  const C = S.map(s => new V(...s.c));
+  const T = C.map((_, i) => new V().subVectors(C[Math.min(n - 1, i + 1)], C[Math.max(0, i - 1)]));
+  let last = new V(1, 0, 0);
+  for (const t of T) { if (t.lengthSq() < 1e-12) t.copy(last); else { t.normalize(); last = t.clone(); } }
+  let nrm = new V(0, 0, 1).cross(T[0]); if (nrm.lengthSq() < 1e-6) nrm = new V(0, 1, 0).cross(T[0]); nrm.normalize();
+  const rings = [];
+  for (let i = 0; i < n; i++) {
+    nrm.sub(T[i].clone().multiplyScalar(nrm.dot(T[i])));
+    if (nrm.lengthSq() < 1e-8) { nrm = new V(0, 0, 1).cross(T[i]); if (nrm.lengthSq() < 1e-6) nrm = new V(0, 1, 0).cross(T[i]); }
+    nrm.normalize();
+    const b = new V().crossVectors(T[i], nrm), ring = [];
+    for (let j = 0; j < M; j++) {
+      const a = j / M * Math.PI * 2;
+      ring.push(C[i].clone().addScaledVector(nrm, Math.cos(a) * S[i].r).addScaledVector(b, Math.sin(a) * S[i].r));
+    }
+    rings.push(ring);
+  }
+  const tris = [];
+  for (let i = 0; i < n - 1; i++) for (let j = 0; j < M; j++) {
+    const a = rings[i][j], b = rings[i][(j + 1) % M], c = rings[i + 1][j], d = rings[i + 1][(j + 1) % M];
+    tris.push([a, c, b], [b, c, d]);
+  }
+  for (let j = 0; j < M; j++) {
+    tris.push([C[0], rings[0][j], rings[0][(j + 1) % M]]);
+    tris.push([C[n - 1], rings[n - 1][(j + 1) % M], rings[n - 1][j]]);
+  }
+  // make every triangle face outward: if the enclosed volume comes out negative, flip them all
+  let vol = 0;
+  for (const [a, b, c] of tris) vol += a.dot(new V().crossVectors(b, c));
+  if (vol < 0) for (const t of tris) [t[1], t[2]] = [t[2], t[1]];
+  return tris;
+}
+function exportSTL(prefix) {
+  if (!lastPrint) return;
+  const depth = +$("depth").value / 10;
+  // the piece as shown (with the depth slider), turned so it stands up on the print bed (Z up)
+  const strokesD = lastPrint.map(st => resample(st.samples).map(p => ({ c: [p.c[0], -p.c[2] * depth, p.c[1]], r: p.r })));
+  const all = strokesD.flat();
+  const min = [0, 1, 2].map(k => Math.min(...all.map(p => p.c[k] - p.r)));
+  const max = [0, 1, 2].map(k => Math.max(...all.map(p => p.c[k] + p.r)));
+  const k = PRINT_SIZE / Math.max(...max.map((v, i) => v - min[i]), 1e-6);
+  const off = [-(min[0] + max[0]) / 2, -(min[1] + max[1]) / 2, -min[2]];
+  const tris = [];
+  for (const S of strokesD) {
+    if (S.length < 2) continue;
+    const mm = S.map(p => ({ c: p.c.map((v, i) => (v + off[i]) * k), r: Math.max(p.r * k, MIN_R) }));
+    tris.push(...printTube(mm));
+  }
+  const buf = new ArrayBuffer(84 + tris.length * 50), dv = new DataView(buf);
+  const head = "kuusho/gassho stroke export (mm)";
+  for (let i = 0; i < head.length; i++) dv.setUint8(i, head.charCodeAt(i));
+  dv.setUint32(80, tris.length, true);
+  let o = 84;
+  const e1 = new THREE.Vector3(), e2 = new THREE.Vector3(), nn = new THREE.Vector3();
+  for (const [a, b, c] of tris) {
+    nn.crossVectors(e1.subVectors(b, a), e2.subVectors(c, a)).normalize();
+    for (const v of [nn, a, b, c]) { dv.setFloat32(o, v.x, true); dv.setFloat32(o + 4, v.y, true); dv.setFloat32(o + 8, v.z, true); o += 12; }
+    dv.setUint16(o, 0, true); o += 2;
+  }
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(new Blob([buf], { type: "model/stl" }));
+  a.download = prefix + "-" + new Date().toISOString().slice(0, 19).replace(/[:T]/g, "-") + ".stl";
+  document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(() => URL.revokeObjectURL(a.href), 4000);
+}
+// two-colour print: one 3MF with the two people's strokes as separate parts of one object,
+// so a multi-colour printer can give each part its own filament
+function crc32(u8) {
+  let c, crc = 0xffffffff;
+  const T = crc32.t || (crc32.t = Array.from({ length: 256 }, (_, n) => { c = n; for (let k = 0; k < 8; k++) c = c & 1 ? 0xedb88320 ^ (c >>> 1) : c >>> 1; return c >>> 0; }));
+  for (let i = 0; i < u8.length; i++) crc = T[(crc ^ u8[i]) & 0xff] ^ (crc >>> 8);
+  return (crc ^ 0xffffffff) >>> 0;
+}
+function zipStore(files) {                   // minimal uncompressed zip (3MF is a zip)
+  const enc = new TextEncoder(), parts = [], central = [];
+  let off = 0;
+  for (const f of files) {
+    const name = enc.encode(f.name), data = f.data, crc = crc32(data);
+    const h = new DataView(new ArrayBuffer(30));
+    h.setUint32(0, 0x04034b50, true); h.setUint16(4, 20, true); h.setUint16(6, 0x0800, true);
+    h.setUint32(14, crc, true); h.setUint32(18, data.length, true); h.setUint32(22, data.length, true); h.setUint16(26, name.length, true);
+    parts.push(new Uint8Array(h.buffer), name, data);
+    const c = new DataView(new ArrayBuffer(46));
+    c.setUint32(0, 0x02014b50, true); c.setUint16(4, 20, true); c.setUint16(6, 20, true); c.setUint16(8, 0x0800, true);
+    c.setUint32(16, crc, true); c.setUint32(20, data.length, true); c.setUint32(24, data.length, true); c.setUint16(28, name.length, true);
+    c.setUint32(42, off, true);
+    central.push(new Uint8Array(c.buffer), name);
+    off += 30 + name.length + data.length;
+  }
+  const size = central.reduce((s, x) => s + x.length, 0);
+  const e = new DataView(new ArrayBuffer(22));
+  e.setUint32(0, 0x06054b50, true); e.setUint16(8, files.length, true); e.setUint16(10, files.length, true);
+  e.setUint32(12, size, true); e.setUint32(16, off, true);
+  return new Blob([...parts, ...central, new Uint8Array(e.buffer)], { type: "model/3mf" });
+}
+function export3MF() {
+  if (!lastPrint) return;
+  const depth = +$("depth").value / 10;
+  const groups = [["me", "自分"], ["peer", "相手"]]
+    .map(([who, label]) => ({ label, col: (lastPrint.find(s => s.who === who) || {}).col,
+      strokes: lastPrint.filter(s => s.who === who).map(st => resample(st.samples).map(p => ({ c: [p.c[0], -p.c[2] * depth, p.c[1]], r: p.r }))) }))
+    .filter(g => g.strokes.length);
+  const all = groups.flatMap(g => g.strokes.flat());
+  const min = [0, 1, 2].map(k => Math.min(...all.map(p => p.c[k] - p.r)));
+  const max = [0, 1, 2].map(k => Math.max(...all.map(p => p.c[k] + p.r)));
+  const k = PRINT_SIZE / Math.max(...max.map((v, i) => v - min[i]), 1e-6);
+  const off = [-(min[0] + max[0]) / 2, -(min[1] + max[1]) / 2, -min[2]];
+  const f = v => v.toFixed(3);
+  let objs = "";
+  groups.forEach((g, gi) => {
+    const verts = [], index = new Map(), tris = [];
+    const vid = v => { if (!index.has(v)) { index.set(v, verts.length); verts.push(v); } return index.get(v); };
+    for (const S of g.strokes) {
+      if (S.length < 2) continue;
+      const mm = S.map(p => ({ c: p.c.map((v, i) => (v + off[i]) * k), r: Math.max(p.r * k, MIN_R) }));
+      for (const [a, b, c] of printTube(mm)) tris.push([vid(a), vid(b), vid(c)]);
+    }
+    objs += `<object id="${gi + 2}" name="${g.label}" type="model" pid="1" pindex="${gi}"><mesh><vertices>` +
+      verts.map(v => `<vertex x="${f(v.x)}" y="${f(v.y)}" z="${f(v.z)}"/>`).join("") +
+      `</vertices><triangles>` + tris.map(t => `<triangle v1="${t[0]}" v2="${t[1]}" v3="${t[2]}"/>`).join("") +
+      `</triangles></mesh></object>`;
+  });
+  const assembly = groups.length + 2;
+  const model = `<?xml version="1.0" encoding="UTF-8"?>
+<model unit="millimeter" xml:lang="ja-JP" xmlns="http://schemas.microsoft.com/3dmanufacturing/core/2015/02">
+<metadata name="Title">合書 gassho</metadata>
+<resources>
+<basematerials id="1">${groups.map(g => `<base name="${g.label}" displaycolor="${(g.col || "#ffffff").toUpperCase()}FF"/>`).join("")}</basematerials>
+${objs}
+<object id="${assembly}" name="合書" type="model"><components>${groups.map((_, gi) => `<component objectid="${gi + 2}"/>`).join("")}</components></object>
+</resources>
+<build><item objectid="${assembly}"/></build>
+</model>`;
+  const enc = new TextEncoder();
+  const blob = zipStore([
+    { name: "[Content_Types].xml", data: enc.encode(`<?xml version="1.0" encoding="UTF-8"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="model" ContentType="application/vnd.ms-package.3dmanufacturing-3dmodel+xml"/></Types>`) },
+    { name: "_rels/.rels", data: enc.encode(`<?xml version="1.0" encoding="UTF-8"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Target="/3D/3dmodel.model" Id="rel0" Type="http://schemas.microsoft.com/3dmanufacturing/2013/01/3dmodel"/></Relationships>`) },
+    { name: "3D/3dmodel.model", data: enc.encode(model) },
+  ]);
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(blob);
+  a.download = "gassho-" + new Date().toISOString().slice(0, 19).replace(/[:T]/g, "-") + ".3mf";
+  document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(() => URL.revokeObjectURL(a.href), 4000);
+}
+$("save").onclick = () => export3MF();
 </script>
 </body>
 </html>

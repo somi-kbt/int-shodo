@@ -89,7 +89,7 @@
   <label>奥行き <input id="depth" type="range" min="0" max="40" value="15"></label>
   <label><input id="autoRot" type="checkbox" checked> 自動回転</label>
   <button id="front">正面</button>
-  <button id="save">📷 保存</button>
+  <button id="save">🧊 3Dプリント用に保存</button>
   <button id="again" class="primary">もう一度書く</button>
 </div>
 
@@ -523,6 +523,7 @@ function finish() {
       group.add(new THREE.Points(pg, pm));
     }
   }
+  lastPrint = usable;
   group.scale.z = +$("depth").value / 10;
   setMode("view");
   resize3();
@@ -535,15 +536,81 @@ function frontView() {
   controls.update();
 }
 
-$("save").onclick = () => {
-  renderer.render(scene, camera3);
-  renderer.domElement.toBlob(b => {
-    const a = document.createElement("a");
-    a.href = URL.createObjectURL(b);
-    a.download = "kuusho-3d-" + new Date().toISOString().replace(/[:.]/g, "-") + ".png";
-    a.click(); setTimeout(() => URL.revokeObjectURL(a.href), 2000);
-  }, "image/png");
-};
+// ======================================================================
+// 3D printing: export the strokes as a closed STL, sized for a printer.
+// Each stroke becomes a round tube capped at both ends. Thin strokes are thickened to MIN_R so they print.
+// ======================================================================
+const PRINT_SIZE = 100;                      // mm along the longest side
+const MIN_R = 0.9;                           // mm: thinnest tube radius that prints reliably
+let lastPrint = null;                        // strokes of the piece now on screen
+function printTube(S, M = 24) {
+  const n = S.length, V = THREE.Vector3;
+  const C = S.map(s => new V(...s.c));
+  const T = C.map((_, i) => new V().subVectors(C[Math.min(n - 1, i + 1)], C[Math.max(0, i - 1)]));
+  let last = new V(1, 0, 0);
+  for (const t of T) { if (t.lengthSq() < 1e-12) t.copy(last); else { t.normalize(); last = t.clone(); } }
+  let nrm = new V(0, 0, 1).cross(T[0]); if (nrm.lengthSq() < 1e-6) nrm = new V(0, 1, 0).cross(T[0]); nrm.normalize();
+  const rings = [];
+  for (let i = 0; i < n; i++) {
+    nrm.sub(T[i].clone().multiplyScalar(nrm.dot(T[i])));
+    if (nrm.lengthSq() < 1e-8) { nrm = new V(0, 0, 1).cross(T[i]); if (nrm.lengthSq() < 1e-6) nrm = new V(0, 1, 0).cross(T[i]); }
+    nrm.normalize();
+    const b = new V().crossVectors(T[i], nrm), ring = [];
+    for (let j = 0; j < M; j++) {
+      const a = j / M * Math.PI * 2;
+      ring.push(C[i].clone().addScaledVector(nrm, Math.cos(a) * S[i].r).addScaledVector(b, Math.sin(a) * S[i].r));
+    }
+    rings.push(ring);
+  }
+  const tris = [];
+  for (let i = 0; i < n - 1; i++) for (let j = 0; j < M; j++) {
+    const a = rings[i][j], b = rings[i][(j + 1) % M], c = rings[i + 1][j], d = rings[i + 1][(j + 1) % M];
+    tris.push([a, c, b], [b, c, d]);
+  }
+  for (let j = 0; j < M; j++) {
+    tris.push([C[0], rings[0][j], rings[0][(j + 1) % M]]);
+    tris.push([C[n - 1], rings[n - 1][(j + 1) % M], rings[n - 1][j]]);
+  }
+  // make every triangle face outward: if the enclosed volume comes out negative, flip them all
+  let vol = 0;
+  for (const [a, b, c] of tris) vol += a.dot(new V().crossVectors(b, c));
+  if (vol < 0) for (const t of tris) [t[1], t[2]] = [t[2], t[1]];
+  return tris;
+}
+function exportSTL(prefix) {
+  if (!lastPrint) return;
+  const depth = +$("depth").value / 10;
+  // the piece as shown (with the depth slider), turned so it stands up on the print bed (Z up)
+  const strokesD = lastPrint.map(st => resample(st.samples).map(p => ({ c: [p.c[0], -p.c[2] * depth, p.c[1]], r: p.r })));
+  const all = strokesD.flat();
+  const min = [0, 1, 2].map(k => Math.min(...all.map(p => p.c[k] - p.r)));
+  const max = [0, 1, 2].map(k => Math.max(...all.map(p => p.c[k] + p.r)));
+  const k = PRINT_SIZE / Math.max(...max.map((v, i) => v - min[i]), 1e-6);
+  const off = [-(min[0] + max[0]) / 2, -(min[1] + max[1]) / 2, -min[2]];
+  const tris = [];
+  for (const S of strokesD) {
+    if (S.length < 2) continue;
+    const mm = S.map(p => ({ c: p.c.map((v, i) => (v + off[i]) * k), r: Math.max(p.r * k, MIN_R) }));
+    tris.push(...printTube(mm));
+  }
+  const buf = new ArrayBuffer(84 + tris.length * 50), dv = new DataView(buf);
+  const head = "kuusho/gassho stroke export (mm)";
+  for (let i = 0; i < head.length; i++) dv.setUint8(i, head.charCodeAt(i));
+  dv.setUint32(80, tris.length, true);
+  let o = 84;
+  const e1 = new THREE.Vector3(), e2 = new THREE.Vector3(), nn = new THREE.Vector3();
+  for (const [a, b, c] of tris) {
+    nn.crossVectors(e1.subVectors(b, a), e2.subVectors(c, a)).normalize();
+    for (const v of [nn, a, b, c]) { dv.setFloat32(o, v.x, true); dv.setFloat32(o + 4, v.y, true); dv.setFloat32(o + 8, v.z, true); o += 12; }
+    dv.setUint16(o, 0, true); o += 2;
+  }
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(new Blob([buf], { type: "model/stl" }));
+  a.download = prefix + "-" + new Date().toISOString().slice(0, 19).replace(/[:T]/g, "-") + ".stl";
+  document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(() => URL.revokeObjectURL(a.href), 4000);
+}
+$("save").onclick = () => exportSTL("kuusho");
 </script>
 </body>
 </html>
