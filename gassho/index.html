@@ -156,6 +156,7 @@ const live = new Map(), peerLive = new Map();
 let strokes = [], strokeCounter = 0;
 let fx = [];                                 // short-lived effects: speed lines, stars, rings
 let sync = { sum: 0, n: 0 };
+let peerScore = null, scoreWait = null;     // the partner's half of the sync score; both sides add the two halves
 
 const clamp = (v, a, b) => Math.min(b, Math.max(a, v));
 const smooth = (a, b, x) => { const t = clamp((x - a) / (b - a), 0, 1); return t * t * (3 - 2 * t); };
@@ -435,6 +436,7 @@ function onMsg(m) {
 function handleMsg(m) {
   if (!m || typeof m !== "object") return;
   if (m.t === "start") remoteStart();
+  else if (m.t === "score") { peerScore = { sum: +m.sum || 0, n: +m.n || 0 }; if (mode === "view") showScore(); }
   else if (m.t === "b") onPeerBrush(m);
 }
 
@@ -571,7 +573,7 @@ function beginCount(fromRemote) {
   if (mode === "count" || mode === "rec") return;
   unlockAudio();
   ictx.clearRect(0, 0, ink.width, ink.height);
-  live.clear(); peerLive.clear(); strokes = []; fx = []; sync = { sum: 0, n: 0 };
+  live.clear(); peerLive.clear(); strokes = []; fx = []; sync = { sum: 0, n: 0 }; peerScore = null;
   setMode("count");
   if (!fromRemote) send({ t: "start" });
 }
@@ -917,6 +919,7 @@ function tubeGeometry(S, ctr) {
 
 function finish() {
   stopCamera(); beatOff();
+  send({ t: "score", sum: sync.sum, n: sync.n });
   const usable = strokes.filter(s => s.samples.length >= 2);
   if (!usable.length) {
     setMode("ready"); statusEl.textContent = "線が書けてなかったみたい。もう一回！";
@@ -950,12 +953,23 @@ function finish() {
   group.scale.z = +$("depth").value / 10;
   setMode("view");
   resize3(); frontView();
-  if (sync.n > 20) {
-    const pct = Math.round(100 * sync.sum / sync.n);
-    $("scoreNum").textContent = pct + "%";
-    $("scoreMsg").textContent = pct >= 80 ? "息ぴったり！" : pct >= 60 ? "いい感じ！" : pct >= 40 ? "なかなか！" : "個性ゆたか！";
+  clearTimeout(scoreWait);
+  if (conn && conn.open && !peerScore) {    // wait a moment for the partner's half so both phones show the same number
+    $("scoreNum").textContent = "…"; $("scoreMsg").textContent = "集計中";
     $("score").classList.remove("hidden");
-  }
+    scoreWait = setTimeout(showScore, 3000);
+  } else showScore();
+}
+// same formula on both phones: (my sum + partner's sum) / (my count + partner's count)
+function showScore() {
+  if (mode !== "view") return;
+  clearTimeout(scoreWait);
+  const sum = sync.sum + (peerScore ? peerScore.sum : 0), n = sync.n + (peerScore ? peerScore.n : 0);
+  if (n <= (peerScore ? 40 : 20)) { $("score").classList.add("hidden"); return; }
+  const pct = Math.round(100 * sum / n);
+  $("scoreNum").textContent = pct + "%";
+  $("scoreMsg").textContent = pct >= 80 ? "息ぴったり！" : pct >= 60 ? "いい感じ！" : pct >= 40 ? "なかなか！" : "個性ゆたか！";
+  $("score").classList.remove("hidden");
 }
 function frontView() {
   controls.target.set(0, 0, 0);
