@@ -1,0 +1,415 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="version" content="0.1">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#f3ede1">
+<title>chirashi 散らし – 短歌を万葉がなで散らし書きに v0.1</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Yuji+Syuku&family=Yuji+Boku&family=Yuji+Mai&family=Shippori+Mincho:wght@500&display=swap" rel="stylesheet">
+<style>
+  :root { --bg:#f3ede1; --fg:#2a241d; --mute:#8a7f70; --line:rgba(42,36,29,.16); --acc:#b23a24; --card:#fffaf0; }
+  * { box-sizing:border-box; -webkit-tap-highlight-color:transparent; }
+  html,body { margin:0; background:var(--bg); color:var(--fg);
+    font-family:"Shippori Mincho","Hiragino Mincho ProN","Yu Mincho",serif; }
+  main { max-width:760px; margin:0 auto; padding:calc(18px + env(safe-area-inset-top)) 16px calc(40px + env(safe-area-inset-bottom)); }
+  header { display:flex; align-items:baseline; gap:12px; margin-bottom:6px; }
+  h1 { margin:0; font-family:"Yuji Syuku",serif; font-weight:400; font-size:34px; letter-spacing:.12em; }
+  h1 small { font-family:"Shippori Mincho",serif; font-size:12px; letter-spacing:.3em; color:var(--mute); margin-left:6px; }
+  .ver { margin-left:auto; font-size:11px; color:var(--mute); }
+  .lead { margin:0 0 16px; font-size:13px; color:var(--mute); line-height:1.8; }
+  textarea { width:100%; min-height:84px; resize:vertical; font:inherit; font-size:18px; line-height:1.7; color:var(--fg);
+    background:var(--card); border:1px solid var(--line); border-radius:12px; padding:12px 14px; }
+  textarea:focus { outline:none; border-color:var(--acc); }
+  .hint { font-size:12px; color:var(--mute); margin:6px 2px 14px; line-height:1.7; }
+  .ctl { display:flex; flex-wrap:wrap; gap:8px 14px; align-items:center; margin-bottom:10px; }
+  .ctl .lab { font-size:12px; color:var(--mute); min-width:3.5em; }
+  .seg { display:flex; flex-wrap:wrap; gap:6px; }
+  button { font:inherit; font-size:14px; color:var(--fg); background:var(--card); border:1px solid var(--line);
+    border-radius:999px; padding:8px 14px; min-height:40px; cursor:pointer; }
+  button.on { background:var(--fg); color:var(--bg); border-color:var(--fg); }
+  button.main { background:var(--acc); color:#fff; border-color:var(--acc); }
+  button:active { transform:scale(.97); }
+  .stage { margin:16px auto 10px; display:flex; justify-content:center; }
+  canvas { display:block; max-width:100%; max-height:78vh; border-radius:4px;
+    box-shadow:0 1px 2px rgba(0,0,0,.08), 0 10px 30px rgba(60,40,20,.18); touch-action:manipulation; cursor:pointer; }
+  .actions { display:flex; gap:8px; justify-content:center; flex-wrap:wrap; margin-bottom:18px; }
+  h2 { font-size:14px; font-weight:500; letter-spacing:.2em; color:var(--mute); margin:22px 0 8px; }
+  .used { display:flex; flex-wrap:wrap; gap:6px; }
+  .used span { display:inline-flex; flex-direction:column; align-items:center; min-width:44px; padding:6px 6px 4px;
+    background:var(--card); border:1px solid var(--line); border-radius:10px; }
+  .used b { font-family:var(--brush, "Yuji Syuku"),serif; font-weight:400; font-size:24px; line-height:1.2; }
+  .used i { font-style:normal; font-size:11px; color:var(--mute); }
+  .about { font-size:12px; color:var(--mute); line-height:1.9; margin-top:24px; }
+  #toast { position:fixed; left:50%; bottom:calc(22px + env(safe-area-inset-bottom)); transform:translateX(-50%);
+    background:rgba(42,36,29,.92); color:#fff; padding:10px 16px; border-radius:999px; font-size:14px;
+    opacity:0; transition:opacity .3s; pointer-events:none; white-space:nowrap; }
+  #toast.show { opacity:1; }
+</style>
+</head>
+<body>
+<main>
+  <header><h1>散らし<small>CHIRASHI</small></h1><span class="ver">v0.1</span></header>
+  <p class="lead">短歌を書くと、ひらがなを万葉がなに置き換えて、色紙や短冊に散らし書きします。漢字はそのまま残ります。</p>
+
+  <textarea id="src" spellcheck="false">秋の田の かりほの庵の 苫をあらみ わが衣手は 露にぬれつつ</textarea>
+  <div class="hint">句の切れ目に空白を入れると、そこで行が分かれやすくなります。カタカナはひらがなとして扱います。<br>できあがった字をタップすると、別の万葉がなに切り替わります。</div>
+
+  <div class="ctl"><span class="lab">料紙</span><div class="seg" id="paper"></div></div>
+  <div class="ctl"><span class="lab">構成</span><div class="seg" id="layout"></div></div>
+  <div class="ctl"><span class="lab">書体</span><div class="seg" id="font"></div></div>
+  <div class="ctl"><span class="lab">字母</span><div class="seg" id="mode"></div></div>
+  <div class="ctl"><span class="lab">字形</span><div class="seg" id="warp"></div></div>
+
+  <div class="stage"><canvas id="cv"></canvas></div>
+  <div class="actions">
+    <button id="shake">揺らぎを変える</button>
+    <button id="save" class="main">画像を保存</button>
+  </div>
+
+  <h2>使った万葉がな</h2>
+  <div class="used" id="used"></div>
+
+  <p class="about">万葉がなは、漢字の音を借りてかなを表した文字です。平安時代のかな書では、同じ音でも元の漢字（字母）を変えて書き、紙面に変化をつけました。ここでは字母の候補から選んで並べています。筆文字はフォントによる表示なので、作品の構成を考える下書きとしてお使いください。濁点は古い書き方にならって付けていません。</p>
+</main>
+<div id="toast"></div>
+
+<script>
+(() => {
+// ---------- 字母（ひらがな → 万葉がなの候補。先頭が現在のひらがなの元になった字） ----------
+const JIBO = {
+  'あ':'安阿愛','い':'以伊意','う':'宇有雲','え':'衣江盈','お':'於隠',
+  'か':'加可閑','き':'幾支起','く':'久具九','け':'計介気','こ':'己古許',
+  'さ':'左佐散','し':'之志新','す':'寸春須','せ':'世勢','そ':'曽楚所',
+  'た':'太多堂','ち':'知千地','つ':'川津徒','て':'天帝','と':'止登東',
+  'な':'奈那名','に':'仁爾丹','ぬ':'奴怒','ね':'祢年','の':'乃能農',
+  'は':'波者八','ひ':'比飛悲','ふ':'不婦布','へ':'部遍弊','ほ':'保本報',
+  'ま':'末万満','み':'美三見','む':'武無牟','め':'女免面','も':'毛母裳',
+  'や':'也夜屋','ゆ':'由遊','よ':'与余代',
+  'ら':'良羅','り':'利里理','る':'留流類','れ':'礼連麗','ろ':'呂路露',
+  'わ':'和王','ゐ':'為井','ゑ':'恵衛','を':'遠越乎','ん':'无'
+};
+const SMALL = { 'ぁ':'あ','ぃ':'い','ぅ':'う','ぇ':'え','ぉ':'お','っ':'つ','ゃ':'や','ゅ':'ゆ','ょ':'よ','ゎ':'わ','ゕ':'か','ゖ':'け' };
+
+// 一字をひらがなの基本形に（濁点・半濁点・小書き・カタカナを外す）
+function baseKana(ch) {
+  let c = ch;
+  const code = c.codePointAt(0);
+  if (code >= 0x30A1 && code <= 0x30F6) c = String.fromCodePoint(code - 0x60);   // カタカナ → ひらがな
+  c = c.normalize('NFD').replace(/[゙゚]/g, '');
+  c = SMALL[c] || c;
+  return JIBO[c] ? c : null;
+}
+
+// ---------- 料紙と構成 ----------
+const PAPERS = {
+  shikishi: { name:'色紙', w:1080, h:1215 },
+  tanzaku:  { name:'短冊', w:420,  h:2520 },
+  hanshi:   { name:'半紙', w:1080, h:1485 },
+};
+// cols: 右の行から順に { w:字数の割合, top:上端（紙の高さに対する割合）, s:字の大きさ }
+const LAYOUTS = {
+  shikishi: [
+    { name:'流れ',   cols:[{w:5,top:.06,s:1.05},{w:7,top:.15,s:1},{w:5,top:.28,s:1},{w:7,top:.11,s:.95},{w:7,top:.36,s:.92}] },
+    { name:'返し',   cols:[{w:5,top:.05,s:1.1},{w:7,top:.10,s:1.05},{w:5,top:.16,s:1},{w:7,top:.44,s:.9},{w:7,top:.50,s:.88}] },
+    { name:'三行',   cols:[{w:12,top:.07,s:1.05},{w:12,top:.22,s:1},{w:7,top:.13,s:.95}] },
+    { name:'七行',   cols:[{w:4,top:.05,s:1.05},{w:4,top:.18,s:1},{w:5,top:.10,s:1},{w:4,top:.32,s:.95},{w:5,top:.20,s:.95},{w:4,top:.42,s:.9},{w:5,top:.28,s:.9}] },
+  ],
+  hanshi: [
+    { name:'流れ',   cols:[{w:5,top:.05,s:1.05},{w:7,top:.13,s:1},{w:5,top:.24,s:1},{w:7,top:.09,s:.95},{w:7,top:.31,s:.92}] },
+    { name:'返し',   cols:[{w:5,top:.04,s:1.1},{w:7,top:.08,s:1.05},{w:5,top:.13,s:1},{w:7,top:.40,s:.9},{w:7,top:.46,s:.88}] },
+    { name:'三行',   cols:[{w:12,top:.06,s:1.05},{w:12,top:.19,s:1},{w:7,top:.11,s:.95}] },
+  ],
+  tanzaku: [
+    { name:'上下',   cols:[{w:17,top:.03,s:1},{w:14,top:.30,s:.95}] },
+    { name:'一行',   cols:[{w:31,top:.04,s:1}] },
+  ],
+};
+const FONTS = [
+  { name:'宿', css:'Yuji Syuku' },
+  { name:'墨', css:'Yuji Boku' },
+  { name:'舞', css:'Yuji Mai' },
+];
+const WARPS = [
+  { name:'そのまま', k:0 },
+  { name:'控えめ',   k:.6 },
+  { name:'大胆',     k:1 },
+];
+const MODES = [
+  { name:'変化をつける', id:'vary' },
+  { name:'基本の字母',   id:'base' },
+];
+
+// ---------- 状態 ----------
+const store = { get(k, d) { try { const v = localStorage.getItem('chirashi_' + k); return v == null ? d : v; } catch { return d; } },
+                set(k, v) { try { localStorage.setItem('chirashi_' + k, v); } catch {} } };
+const st = {
+  paper: store.get('paper', 'shikishi'),
+  layout: +store.get('layout', 0),
+  font: +store.get('font', 0),
+  mode: store.get('mode', 'vary'),
+  warp: +store.get('warp', 1),
+  seed: 7,
+  pick: {},            // 何字目の字母を手で選んだか { index: 候補番号 }
+};
+if (!PAPERS[st.paper]) st.paper = 'shikishi';
+
+const $ = id => document.getElementById(id);
+const cv = $('cv'), cx = cv.getContext('2d');
+const src = $('src');
+src.value = store.get('text', src.value);
+
+function toast(msg) {
+  const t = $('toast'); t.textContent = msg; t.classList.add('show');
+  clearTimeout(toast.id); toast.id = setTimeout(() => t.classList.remove('show'), 1800);
+}
+
+// ---------- 入力 → 文字列 ----------
+// 返り値: [{ ch:表示する字, kana:元のかな|null, idx:入力の何字目か, br:句の切れ目の直後か }]
+function convert(text) {
+  const out = [], seen = {};
+  let br = false, i = 0;
+  for (const ch of text) {
+    i++;
+    if (/\s|　|、|。|，|．/.test(ch)) { br = out.length > 0; continue; }
+    if (ch === 'ー' || ch === '〜') continue;
+    const k = baseKana(ch);
+    if (k) {
+      const cands = JIBO[k];
+      let n = 0;
+      if (st.mode === 'vary') { n = (seen[k] || 0) % cands.length; seen[k] = (seen[k] || 0) + 1; }
+      if (st.pick[i] != null) n = st.pick[i] % cands.length;
+      out.push({ ch: [...cands][n], kana: k, idx: i, br });
+    } else {
+      out.push({ ch, kana: null, idx: i, br });
+    }
+    br = false;
+  }
+  return out;
+}
+
+// ---------- 行に分ける ----------
+function splitColumns(chars, cols) {
+  const total = chars.length;
+  if (!total) return cols.map(() => []);
+  // 句の切れ目の数が行の数と合えば、句ごとに行を分ける
+  const ku = [[]];
+  chars.forEach(c => { if (c.br) ku.push([]); ku[ku.length - 1].push(c); });
+  if (ku.length === cols.length) return ku;
+  // そうでなければ字数の割合で分け、なるべく句の切れ目に寄せる
+  const sum = cols.reduce((a, c) => a + c.w, 0);
+  const res = []; let pos = 0, acc = 0;
+  cols.forEach((c, k) => {
+    acc += c.w;
+    let end = k === cols.length - 1 ? total : Math.round(total * acc / sum);
+    for (let d = 1; d <= 2 && k < cols.length - 1; d++) {
+      if (chars[end + d] && chars[end + d].br) { end += d; break; }
+      if (end - d > pos && chars[end - d] && chars[end - d].br) { end -= d; break; }
+    }
+    end = Math.max(pos + (total - pos > cols.length - k - 1 ? 1 : 0), Math.min(end, total - (cols.length - k - 1)));
+    res.push(chars.slice(pos, end)); pos = end;
+  });
+  return res.filter(r => r.length);
+}
+
+// ---------- 乱数（揺らぎ用） ----------
+function rng(seed) { let s = seed >>> 0 || 1; return () => (s = (s * 1664525 + 1013904223) >>> 0) / 4294967296; }
+
+// ---------- 字形の変形（縦長・横長・台形・菱形・傾き） ----------
+const glyph = document.createElement('canvas'), gx = glyph.getContext('2d');
+// 字ごとに形を決める。k は変形の強さ（0〜1）
+function pickShape(r, k, isKana) {
+  if (!k) return { sx:1, sy:1, skew:0, w:() => 1 };
+  const t = r();
+  let sx = 1, sy = 1, skew = 0, w = () => 1;
+  if (t < .30) { sy = 1 + .30 * k; sx = 1 - .18 * k; }                       // 縦長
+  else if (t < .48) { sx = 1 + .28 * k; sy = 1 - .2 * k; }                   // 横長
+  else if (t < .64) { const a = .55 * k, top = r() < .5;                      // 台形（上すぼまり／下すぼまり）
+                      w = v => top ? 1 - a + a * v : 1 - a * v; }
+  else if (t < .78) { const a = .5 * k; w = v => 1 - a * Math.abs(2 * v - 1); sy = 1 + .12 * k; }   // 菱形
+  else { skew = (r() < .5 ? -1 : 1) * (.18 + r() * .14) * k; }              // 傾き（平行四辺形）
+  if (isKana && t < .64) sy *= 1 + .08 * k;                                   // かなは少し縦に流す
+  return { sx, sy, skew, w };
+}
+function drawGlyph(ch, x, y, fs, font, rot, sh) {
+  const S = Math.ceil(fs * 1.6);
+  if (glyph.width !== S) { glyph.width = S; glyph.height = S; } else gx.clearRect(0, 0, S, S);
+  gx.textAlign = 'center'; gx.textBaseline = 'middle';
+  gx.fillStyle = '#1d1915'; gx.font = `${fs}px ${font}`;
+  gx.fillText(ch, S / 2, S / 2);
+  cx.save();
+  cx.translate(x, y); cx.rotate(rot);
+  cx.transform(sh.sx, 0, sh.skew, sh.sy, 0, 0);
+  const N = 28, h = S / N;
+  for (let i = 0; i < N; i++) {               // 横に細く切り、幅を変えながら貼る
+    const ww = S * sh.w((i + .5) / N);
+    cx.drawImage(glyph, 0, i * h, S, h, -ww / 2, -S / 2 + i * h, ww, h + .6);
+  }
+  cx.restore();
+}
+
+// ---------- 描画 ----------
+let hits = [];       // タップ判定用 { x, y, r, idx, kana }
+let last = null;
+
+function paperBg(P) {
+  cx.fillStyle = '#fbf6ea'; cx.fillRect(0, 0, P.w, P.h);
+  // 和紙のむら
+  const r = rng(99);
+  for (let i = 0; i < 260; i++) {
+    cx.fillStyle = `rgba(150,120,80,${r() * .035})`;
+    cx.beginPath(); cx.arc(r() * P.w, r() * P.h, 8 + r() * 60, 0, 7); cx.fill();
+  }
+  // 金砂子
+  for (let i = 0; i < (P.w * P.h) / 2600; i++) {
+    const y = r() * P.h, edge = Math.min(y, P.h - y) / P.h;
+    if (r() > .25 + edge * 2.2) continue;   // 上下の端に多く
+    cx.fillStyle = `rgba(${190 + r() * 40},${150 + r() * 30},${60 + r() * 30},${.35 + r() * .5})`;
+    const s = 1 + r() * 3.2; cx.fillRect(r() * P.w, y, s, s * (.6 + r()));
+  }
+  cx.strokeStyle = 'rgba(160,130,70,.55)'; cx.lineWidth = Math.max(2, P.w * .004);
+  cx.strokeRect(cx.lineWidth / 2, cx.lineWidth / 2, P.w - cx.lineWidth, P.h - cx.lineWidth);
+}
+
+async function draw() {
+  const P = PAPERS[st.paper];
+  const L = LAYOUTS[st.paper][st.layout] || LAYOUTS[st.paper][0];
+  const F = FONTS[st.font];
+  const chars = convert(src.value);
+  const cols = splitColumns(chars, L.cols);
+  const spec = L.cols.slice(0, cols.length);
+
+  try { await document.fonts.load(`40px "${F.css}"`, chars.map(c => c.ch).join('') || '安'); } catch {}
+
+  cv.width = P.w; cv.height = P.h;
+  paperBg(P);
+  hits = [];
+  if (!cols.length) { renderUsed(chars); return; }
+
+  // 字の大きさを、いちばん長い行が紙に収まるように決める
+  const marginY = P.h * .05, marginX = P.w * .08;
+  const adv = c => (c.kana ? .96 : 1.18);
+  let base = Infinity;
+  cols.forEach((col, k) => {
+    const len = col.reduce((a, c) => a + adv(c), 0) * spec[k].s;
+    base = Math.min(base, (P.h - marginY - P.h * spec[k].top) / (len + .3));
+  });
+  const colGap = 1.45;
+  base = Math.min(base, (P.w - marginX * 2) / (cols.length * colGap));
+  base = Math.min(base, P.w * .22) * (1 - .1 * WARPS[st.warp].k);
+
+  const r = rng(st.seed), rs = rng(st.seed * 7 + 3);
+  const totalW = cols.length * base * colGap;
+  const x0 = P.w / 2 + totalW / 2 - base * colGap / 2;    // いちばん右の行の中心
+
+  cx.textAlign = 'center'; cx.textBaseline = 'middle';
+  cx.fillStyle = '#1d1915';
+  cols.forEach((col, k) => {
+    const s = spec[k].s, size = base * s;
+    let x = x0 - k * base * colGap + (r() - .5) * base * .25;
+    let y = P.h * spec[k].top + (r() - .5) * P.h * .025;
+    col.forEach(c => {
+      const fs = size * (c.kana ? .95 : 1.12) * (1 + (r() - .5) * .14);
+      const dx = (r() - .5) * size * .14;
+      const rot = (r() - .5) * .07;
+      const sh = pickShape(rs, WARPS[st.warp].k, !!c.kana);
+      const hh = size * adv(c) * (1 + (sh.sy - 1) * .6) * (1 + (r() - .5) * .08);
+      y += hh / 2;
+      drawGlyph(c.ch, x + dx, y, fs, `"${F.css}", "Yuji Syuku", serif`, rot, sh);
+      hits.push({ x: x + dx, y, r: fs * .55, idx: c.idx, kana: c.kana, ch: c.ch });
+      y += hh / 2;
+      x += (r() - .5) * size * .05;     // 行がわずかに揺れる
+    });
+  });
+
+  // 落款風の小さな印
+  const seal = base * .42;
+  cx.fillStyle = 'rgba(178,48,30,.88)';
+  const sx = x0 - (cols.length - 1) * base * colGap - base * .9, sy = P.h - marginY - seal * 1.4;
+  if (sx - seal / 2 > P.w * .03) {
+    cx.fillRect(sx - seal / 2, sy, seal, seal);
+    cx.fillStyle = '#fbf6ea'; cx.font = `${seal * .62}px "${F.css}", serif`;
+    cx.fillText('散', sx, sy + seal / 2);
+  }
+  renderUsed(chars);
+  last = chars;
+}
+
+function renderUsed(chars) {
+  const u = $('used'); u.innerHTML = '';
+  const map = new Map();
+  chars.forEach(c => { if (c.kana) map.set(c.ch, c.kana); });
+  if (!map.size) { u.innerHTML = '<span style="border:0;background:none;color:var(--mute);font-size:13px">ひらがなが入ると、ここに字母が並びます</span>'; return; }
+  document.documentElement.style.setProperty('--brush', `"${FONTS[st.font].css}"`);
+  for (const [ch, k] of map) {
+    const s = document.createElement('span');
+    s.innerHTML = `<b>${ch}</b><i>${k}</i>`;
+    u.appendChild(s);
+  }
+}
+
+// ---------- 字をタップして字母を切り替える ----------
+cv.addEventListener('click', e => {
+  const rect = cv.getBoundingClientRect();
+  const x = (e.clientX - rect.left) * cv.width / rect.width;
+  const y = (e.clientY - rect.top) * cv.height / rect.height;
+  let best = null, bd = Infinity;
+  hits.forEach(h => { const d = Math.hypot(h.x - x, h.y - y); if (d < h.r * 1.2 && d < bd) { bd = d; best = h; } });
+  if (!best) return;
+  if (!best.kana) { toast(`「${best.ch}」は漢字のまま書いています`); return; }
+  const cands = [...JIBO[best.kana]];
+  const cur = cands.indexOf(best.ch);
+  const next = (cur + 1) % cands.length;
+  st.pick[best.idx] = next;
+  draw();
+  toast(cands.length > 1 ? `${best.kana}：${cands.map((c, i) => i === next ? `［${c}］` : c).join(' ')}` : `${best.kana} の字母は「${cands[0]}」だけです`);
+});
+
+// ---------- 操作 ----------
+function buttons(el, items, isOn, onPick) {
+  el.innerHTML = '';
+  items.forEach((it, i) => {
+    const b = document.createElement('button');
+    b.textContent = it.name; if (isOn(it, i)) b.classList.add('on');
+    b.onclick = () => { onPick(it, i); renderControls(); draw(); };
+    el.appendChild(b);
+  });
+}
+function renderControls() {
+  buttons($('paper'), Object.entries(PAPERS).map(([id, p]) => ({ id, name: p.name })), it => it.id === st.paper,
+    it => { st.paper = it.id; st.layout = 0; store.set('paper', it.id); store.set('layout', 0); });
+  buttons($('layout'), LAYOUTS[st.paper], (it, i) => i === st.layout, (it, i) => { st.layout = i; store.set('layout', i); });
+  buttons($('font'), FONTS, (it, i) => i === st.font, (it, i) => { st.font = i; store.set('font', i); });
+  buttons($('warp'), WARPS, (it, i) => i === st.warp, (it, i) => { st.warp = i; store.set('warp', i); });
+  buttons($('mode'), MODES, it => it.id === st.mode, it => { st.mode = it.id; st.pick = {}; store.set('mode', it.id); });
+}
+
+let typing;
+src.addEventListener('input', () => {
+  store.set('text', src.value);
+  st.pick = {};                       // 文章が変わったら手で選んだ字母は戻す
+  clearTimeout(typing); typing = setTimeout(draw, 250);
+});
+$('shake').onclick = () => { st.seed = (Math.random() * 1e9) | 0; draw(); };
+$('save').onclick = () => {
+  cv.toBlob(async blob => {
+    if (!blob) return;
+    const name = 'chirashi.png';
+    const file = new File([blob], name, { type: 'image/png' });
+    if (navigator.canShare && navigator.canShare({ files: [file] })) {
+      try { await navigator.share({ files: [file], title: '散らし' }); return; } catch (e) { if (e.name === 'AbortError') return; }
+    }
+    const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = name; a.click();
+    setTimeout(() => URL.revokeObjectURL(a.href), 4000);
+  }, 'image/png');
+};
+
+renderControls();
+draw();
+document.fonts && document.fonts.ready.then(draw);
+})();
+</script>
+</body>
+</html>
