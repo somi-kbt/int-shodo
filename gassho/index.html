@@ -104,6 +104,7 @@
 
 <div id="barView" class="bar hidden">
   <label>奥行き <input id="depth" type="range" min="0" max="40" value="15"></label>
+  <label><input id="base" type="checkbox" checked> 台座</label>
   <label><input id="autoRot" type="checkbox" checked> くるくる</label>
   <button id="front">正面</button>
   <button id="save">🧊 3Dプリント用（2色）</button>
@@ -859,22 +860,64 @@ function printTube(S, M = 24) {
   if (vol < 0) for (const t of tris) [t[1], t[2]] = [t[2], t[1]];
   return tris;
 }
-function exportSTL(prefix) {
-  if (!lastPrint) return;
-  const depth = +$("depth").value / 10;
-  // the piece as shown (with the depth slider), turned so it stands up on the print bed (Z up)
-  const strokesD = lastPrint.map(st => resample(st.samples).map(p => ({ c: [p.c[0], -p.c[2] * depth, p.c[1]], r: p.r })));
-  const all = strokesD.flat();
+// base for printing: a rounded slab under the piece, plus a post from the slab up to the lowest point
+// of every stroke, so the whole piece comes off the printer as one connected thing
+const BASE_H = 3, BASE_MARGIN = 6, BASE_MIN_DEPTH = 30, POST_R = 1.8;
+function prism(poly, z0, z1) {               // closed vertical prism from a convex outline
+  const V = THREE.Vector3, n = poly.length;
+  const lo = poly.map(([x, y]) => new V(x, y, z0)), hi = poly.map(([x, y]) => new V(x, y, z1));
+  const cx = poly.reduce((s, p) => s + p[0], 0) / n, cy = poly.reduce((s, p) => s + p[1], 0) / n;
+  const c0 = new V(cx, cy, z0), c1 = new V(cx, cy, z1), tris = [];
+  for (let i = 0; i < n; i++) {
+    const j = (i + 1) % n;
+    tris.push([lo[i], lo[j], hi[i]], [lo[j], hi[j], hi[i]], [c0, lo[j], lo[i]], [c1, hi[i], hi[j]]);
+  }
+  let vol = 0;
+  for (const [a, b, c] of tris) vol += a.dot(new V().crossVectors(b, c));
+  if (vol < 0) for (const t of tris) [t[1], t[2]] = [t[2], t[1]];
+  return tris;
+}
+function circle(x, y, r, m = 20) { return Array.from({ length: m }, (_, i) => [x + Math.cos(i / m * Math.PI * 2) * r, y + Math.sin(i / m * Math.PI * 2) * r]); }
+function roundedRect(x0, y0, x1, y1, r, m = 6) {
+  const pts = [];
+  for (const [cx, cy, a0] of [[x1 - r, y1 - r, 0], [x0 + r, y1 - r, 90], [x0 + r, y0 + r, 180], [x1 - r, y0 + r, 270]])
+    for (let i = 0; i <= m; i++) { const a = (a0 + i / m * 90) * Math.PI / 180; pts.push([cx + Math.cos(a) * r, cy + Math.sin(a) * r]); }
+  return pts;
+}
+// strokes: arrays of {c:[x,y,z] mm, r mm}, already lifted to sit BASE_H above the bed
+function baseAndPosts(strokes) {
+  const all = strokes.flat();
+  let x0 = Math.min(...all.map(p => p.c[0] - p.r)) - BASE_MARGIN, x1 = Math.max(...all.map(p => p.c[0] + p.r)) + BASE_MARGIN;
+  let y0 = Math.min(...all.map(p => p.c[1] - p.r)) - BASE_MARGIN, y1 = Math.max(...all.map(p => p.c[1] + p.r)) + BASE_MARGIN;
+  if (y1 - y0 < BASE_MIN_DEPTH) { const m = (y0 + y1) / 2; y0 = m - BASE_MIN_DEPTH / 2; y1 = m + BASE_MIN_DEPTH / 2; }
+  const tris = prism(roundedRect(x0, y0, x1, y1, 6), 0, BASE_H);
+  for (const S of strokes) {
+    const low = S.reduce((a, p) => (p.c[2] < a.c[2] ? p : a), S[0]);
+    if (low.c[2] - low.r <= BASE_H + 0.2) continue;          // already touching the slab
+    tris.push(...prism(circle(low.c[0], low.c[1], Math.min(POST_R, Math.max(low.r, 1.2))), BASE_H - 0.5, low.c[2]));
+  }
+  return tris;
+}
+function printStrokesMM(groups) {            // groups of strokes → millimetres, standing on the bed (Z up)
+  const depth = +$("depth").value / 10, withBase = $("base").checked;
+  const G = groups.map(g => g.map(st => resample(st.samples).map(p => ({ c: [p.c[0], -p.c[2] * depth, p.c[1]], r: p.r }))).filter(S => S.length >= 2));
+  const all = G.flat(2);
   const min = [0, 1, 2].map(k => Math.min(...all.map(p => p.c[k] - p.r)));
   const max = [0, 1, 2].map(k => Math.max(...all.map(p => p.c[k] + p.r)));
   const k = PRINT_SIZE / Math.max(...max.map((v, i) => v - min[i]), 1e-6);
   const off = [-(min[0] + max[0]) / 2, -(min[1] + max[1]) / 2, -min[2]];
-  const tris = [];
-  for (const S of strokesD) {
-    if (S.length < 2) continue;
-    const mm = S.map(p => ({ c: p.c.map((v, i) => (v + off[i]) * k), r: Math.max(p.r * k, MIN_R) }));
-    tris.push(...printTube(mm));
-  }
+  const out = G.map(g => g.map(S => S.map(p => ({ c: p.c.map((v, i) => (v + off[i]) * k), r: Math.max(p.r * k, MIN_R) }))));
+  // stand it on the bed (or sink it slightly into the base so it fuses)
+  const lowest = Math.min(...out.flat(2).map(p => p.c[2] - p.r));
+  const dz = (withBase ? BASE_H - 0.6 : 0) - lowest;
+  for (const p of out.flat(2)) p.c[2] += dz;
+  return out;
+}
+function exportSTL(prefix) {
+  if (!lastPrint) return;
+  const [strokesMM] = printStrokesMM([lastPrint]);
+  const tris = strokesMM.flatMap(S => printTube(S));
+  if ($("base").checked) tris.push(...baseAndPosts(strokesMM));
   const buf = new ArrayBuffer(84 + tris.length * 50), dv = new DataView(buf);
   const head = "kuusho/gassho stroke export (mm)";
   for (let i = 0; i < head.length; i++) dv.setUint8(i, head.charCodeAt(i));
@@ -924,26 +967,17 @@ function zipStore(files) {                   // minimal uncompressed zip (3MF is
 }
 function export3MF() {
   if (!lastPrint) return;
-  const depth = +$("depth").value / 10;
-  const groups = [["me", "自分"], ["peer", "相手"]]
-    .map(([who, label]) => ({ label, col: (lastPrint.find(s => s.who === who) || {}).col,
-      strokes: lastPrint.filter(s => s.who === who).map(st => resample(st.samples).map(p => ({ c: [p.c[0], -p.c[2] * depth, p.c[1]], r: p.r }))) }))
-    .filter(g => g.strokes.length);
-  const all = groups.flatMap(g => g.strokes.flat());
-  const min = [0, 1, 2].map(k => Math.min(...all.map(p => p.c[k] - p.r)));
-  const max = [0, 1, 2].map(k => Math.max(...all.map(p => p.c[k] + p.r)));
-  const k = PRINT_SIZE / Math.max(...max.map((v, i) => v - min[i]), 1e-6);
-  const off = [-(min[0] + max[0]) / 2, -(min[1] + max[1]) / 2, -min[2]];
+  const defs = [["me", "自分"], ["peer", "相手"]].map(([who, label]) => ({ label, col: (lastPrint.find(s => s.who === who) || {}).col, list: lastPrint.filter(s => s.who === who) }))
+    .filter(d => d.list.length);
+  const mm = printStrokesMM(defs.map(d => d.list));
+  const groups = defs.map((d, i) => ({ label: d.label, col: d.col, tris: mm[i].flatMap(S => printTube(S)) }));
+  if ($("base").checked) groups.push({ label: "台座", col: "#eeeeee", tris: baseAndPosts(mm.flat()) });
   const f = v => v.toFixed(3);
   let objs = "";
   groups.forEach((g, gi) => {
     const verts = [], index = new Map(), tris = [];
     const vid = v => { if (!index.has(v)) { index.set(v, verts.length); verts.push(v); } return index.get(v); };
-    for (const S of g.strokes) {
-      if (S.length < 2) continue;
-      const mm = S.map(p => ({ c: p.c.map((v, i) => (v + off[i]) * k), r: Math.max(p.r * k, MIN_R) }));
-      for (const [a, b, c] of printTube(mm)) tris.push([vid(a), vid(b), vid(c)]);
-    }
+    for (const [a, b, c] of g.tris) tris.push([vid(a), vid(b), vid(c)]);
     objs += `<object id="${gi + 2}" name="${g.label}" type="model" pid="1" pindex="${gi}"><mesh><vertices>` +
       verts.map(v => `<vertex x="${f(v.x)}" y="${f(v.y)}" z="${f(v.z)}"/>`).join("") +
       `</vertices><triangles>` + tris.map(t => `<triangle v1="${t[0]}" v2="${t[1]}" v3="${t[2]}"/>`).join("") +
