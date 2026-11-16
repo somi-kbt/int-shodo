@@ -1,0 +1,840 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="version" content="1.0">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#07060b">
+<title>chromasound by somi kubota — 音楽を、光と軌跡に v1.0</title>
+<style>
+  :root { --ui: rgba(255,255,255,.9); --glass: rgba(20,18,30,.55); --line: rgba(255,255,255,.18); }
+  * { box-sizing: border-box; margin: 0; padding: 0; -webkit-tap-highlight-color: transparent; }
+  html, body { height: 100%; background: #07060b; color: var(--ui); overflow: hidden;
+    font-family: "Hiragino Sans", "Noto Sans JP", system-ui, sans-serif; }
+  canvas { position: fixed; inset: 0; width: 100%; height: 100%; display: block; touch-action: none; }
+  [hidden] { display: none !important; }
+  .fade { transition: opacity .6s; }
+  .hide { opacity: 0; pointer-events: none; }
+  .bar { position: fixed; left: 0; right: 0; bottom: 0; display: flex; gap: 8px; flex-wrap: wrap;
+    justify-content: center; padding: 14px 10px calc(34px + env(safe-area-inset-bottom));
+    background: linear-gradient(transparent, rgba(0,0,0,.7)); }
+  .top { position: fixed; top: 0; left: 0; right: 0; padding: calc(12px + env(safe-area-inset-top)) 14px 10px;
+    display: flex; justify-content: space-between; align-items: flex-start; gap: 10px; pointer-events: none; }
+  .top h1 { font-size: 13px; letter-spacing: .14em; font-weight: 600; opacity: .8; padding-top: 4px; white-space: nowrap; }
+  .src { font-size: 12px; opacity: .75; padding-top: 4px; text-align: right; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
+  button, label.btn { appearance: none; border: 1px solid var(--line); background: var(--glass);
+    backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px); color: var(--ui);
+    padding: 10px 14px; border-radius: 999px; font: inherit; font-size: 14px; cursor: pointer; min-height: 44px;
+    display: inline-flex; align-items: center; justify-content: center; gap: 6px; white-space: nowrap; }
+  button:active, label.btn:active { transform: scale(.96); }
+  button:disabled { opacity: .4; }
+  label.main { border-color: rgba(140,200,255,.6); }
+  input[type=file] { display: none; }
+  select.pick { appearance: none; -webkit-appearance: none; border: 1px solid rgba(140,200,255,.6); background: var(--glass);
+    backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px); color: var(--ui); font: inherit; font-size: 14px;
+    min-height: 44px; border-radius: 999px; padding: 10px 30px 10px 14px; max-width: min(58vw, 320px);
+    background-image: linear-gradient(45deg, transparent 50%, #9cd0ff 50%), linear-gradient(135deg, #9cd0ff 50%, transparent 50%);
+    background-position: right 16px center, right 11px center; background-size: 5px 5px; background-repeat: no-repeat; }
+  select.pick option { background: #15131f; color: #fff; }
+  .panel { position: fixed; inset: 0; z-index: 10; background: rgba(5,4,10,.82); backdrop-filter: blur(14px); -webkit-backdrop-filter: blur(14px);
+    display: flex; justify-content: center; overflow-y: auto; padding: calc(18px + env(safe-area-inset-top)) 14px calc(24px + env(safe-area-inset-bottom)); }
+  .panel.off { display: none; }
+  .sheet { width: 100%; max-width: 520px; }
+  .sheet header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 14px; }
+  .sheet h3 { font-size: 18px; font-weight: 500; letter-spacing: .06em; }
+  .sheet .note { font-size: 12px; opacity: .65; line-height: 1.7; margin: 12px 0 16px; }
+  .sheet .note a { color: #9cd0ff; }
+  .addbtn { width: 100%; border-style: dashed; border-color: rgba(140,200,255,.6); }
+  .songs { list-style: none; display: flex; flex-direction: column; gap: 8px; }
+  .songs li { display: flex; gap: 8px; align-items: center; background: rgba(255,255,255,.05); border: 1px solid var(--line); border-radius: 14px; padding: 8px 8px 8px 12px; }
+  .songs .meta { flex: 1; min-width: 0; }
+  .songs input { width: 100%; background: transparent; border: 0; border-bottom: 1px solid transparent; color: var(--ui); font: inherit; font-size: 15px; padding: 4px 0; }
+  .songs input:focus { outline: none; border-bottom-color: rgba(140,200,255,.6); }
+  .songs small { display: block; font-size: 11px; opacity: .5; margin-top: 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .songs button { min-height: 38px; padding: 6px 12px; font-size: 13px; }
+  .songs .del { color: #ff9a9a; border-color: rgba(255,120,120,.35); }
+  .login { display: flex; gap: 8px; margin-bottom: 8px; }
+  .login input { flex: 1; min-width: 0; background: rgba(255,255,255,.06); border: 1px solid var(--line); border-radius: 999px;
+    color: var(--ui); font: inherit; font-size: 15px; padding: 10px 14px; }
+  .login input:focus { outline: none; border-color: rgba(140,200,255,.6); }
+  .count { font-size: 12px; opacity: .6; margin: -6px 0 10px; text-align: right; }
+  .busy { opacity: .5; pointer-events: none; }
+  .empty { font-size: 13px; opacity: .55; text-align: center; padding: 22px 0; }
+  .credit { position: fixed; left: 0; right: 0; bottom: 0; z-index: 3; text-align: center; font-size: 11px;
+    padding: 4px 10px calc(6px + env(safe-area-inset-bottom)); }
+  .credit a { color: rgba(156,208,255,.8); text-decoration: none; }
+  .intro { position: fixed; inset: 0; display: grid; place-items: center; text-align: center; padding: 24px; pointer-events: none; }
+  .intro h2 { font-size: clamp(24px, 7vw, 42px); font-weight: 300; letter-spacing: .08em; margin-bottom: 14px; }
+  .intro p { font-size: 14px; opacity: .72; line-height: 1.9; }
+  .intro small { display: block; margin-top: 16px; font-size: 12px; opacity: .6; line-height: 1.7; }
+  .intro a { color: #9cd0ff; pointer-events: auto; }
+  .toast { position: fixed; left: 50%; top: calc(56px + env(safe-area-inset-top)); transform: translateX(-50%); z-index: 20;
+    background: rgba(0,0,0,.82); border: 1px solid var(--line); padding: 10px 16px; border-radius: 12px; font-size: 13px;
+    max-width: calc(100vw - 32px); text-align: center; line-height: 1.6; }
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+
+<div class="top fade" id="top">
+  <h1>chromasound by somi kubota</h1>
+  <div class="src" id="src"></div>
+</div>
+
+<div class="intro fade" id="intro">
+  <div>
+    <h2>音楽を、光と軌跡に</h2>
+    <p>下の一覧から曲を選ぶと、楽器ごとに1本の色の線が<br>ゆるやかな螺旋を描いて流れていきます。<br>高い音ほど上、音が変わる瞬間に光が散り、<br>何度も出てくるモチーフは太い線になります。<br>（リズムや調が変わっても、メロディの形が同じなら同じモチーフ）</p>
+  </div>
+</div>
+
+<div class="bar fade" id="bar">
+  <select class="pick" id="lib" aria-label="曲を選ぶ"></select>
+  <button id="manage" hidden>＋ 登録</button>
+  <button id="pause" disabled aria-label="一時停止">❚❚</button>
+</div>
+
+<div class="panel off" id="panel">
+  <div class="sheet">
+    <header><h3>MIDIの登録</h3><button id="close">完了</button></header>
+    <div id="loginBox">
+      <p class="note" style="margin-top:0">登録・編集には管理用パスワードが必要です。</p>
+      <form class="login" id="loginForm"><input type="password" id="pw" placeholder="パスワード" autocomplete="current-password"><button>ログイン</button></form>
+    </div>
+    <div id="adminBox" hidden>
+      <label class="btn addbtn" for="file">＋ MIDIファイルを追加（複数選べます）</label>
+      <input type="file" id="file" multiple accept=".mid,.midi,audio/midi,audio/x-midi,audio/mid">
+      <p class="note">登録した曲はサーバーに保存され、このサイトを開いた全員の一覧に並びます（最大20曲）。<br>
+        曲名はタップして書き換えられます。</p>
+      <div class="count" id="count"></div>
+      <ul class="songs" id="songs"></ul>
+    </div>
+  </div>
+</div>
+
+<div class="credit"><a href="http://classic-midi.com/" target="_blank" rel="noopener">Music by Reinmusik</a></div>
+
+<div class="toast fade hide" id="toast"></div>
+
+<script>
+(() => {
+const $ = id => document.getElementById(id);
+const store = {
+  get(k) { try { return localStorage.getItem(k); } catch { return null; } },
+  set(k, v) { try { localStorage.setItem(k, v); } catch {} }
+};
+const cv = $('c'), cx = cv.getContext('2d');
+let W = 0, H = 0, DPR = 1;
+function resize() {
+  DPR = Math.min(window.devicePixelRatio || 1, 2);
+  W = innerWidth; H = innerHeight; cv.width = W * DPR; cv.height = H * DPR;
+  cx.setTransform(DPR, 0, 0, DPR, 0, 0);
+}
+addEventListener('resize', resize); resize();
+let toastT;
+function toast(msg, ms = 3500) {
+  const t = $('toast'); t.textContent = msg; t.classList.remove('hide');
+  clearTimeout(toastT); toastT = setTimeout(() => t.classList.add('hide'), ms);
+}
+
+/* ================= Audio ================= */
+/* The sound is played by an ordinary <audio> element (a WAV made in the browser), not by live Web Audio:
+   the iPhone's screen recorder captures live Web Audio only in tiny slivers (a crackle), but records
+   normal media playback cleanly. */
+let userPaused = false, song = null, noiseBuf = null, unlocked = false;
+try { if (navigator.audioSession) navigator.audioSession.type = 'playback'; } catch {}
+const player = new Audio(); player.preload = 'auto'; player.setAttribute('playsinline', ''); player.loop = true;
+const SILENT = 'data:audio/wav;base64,UklGRiQAAABXQVZFZm10IBAAAAABAAEARKwAAIhYAQACABAAZGF0YQAAAAA=';
+// browsers only allow sound after a tap: the first tap "unlocks" the player, later taps restart it if needed
+['pointerdown', 'touchend', 'keydown'].forEach(ev => addEventListener(ev, () => {
+  if (!unlocked) { unlocked = true; if (!song || !song.ready) { player.src = SILENT; const p = player.play(); if (p) p.catch(() => { unlocked = false; }); } }
+  if (song && song.ready && player.paused && !userPaused) player.play().catch(() => {});
+}, true));
+
+/* ================= MIDI parsing ================= */
+const GM = 'アコースティックピアノ,ブライトピアノ,エレクトリック・グランド,ホンキートンク・ピアノ,エレクトリックピアノ1,エレクトリックピアノ2,チェンバロ,クラビネット,チェレスタ,グロッケンシュピール,オルゴール,ビブラフォン,マリンバ,シロフォン,チューブラーベル,ダルシマー,ドローバーオルガン,パーカッシブオルガン,ロックオルガン,パイプオルガン,リードオルガン,アコーディオン,ハーモニカ,バンドネオン,ナイロン弦ギター,スチール弦ギター,ジャズギター,クリーンギター,ミュートギター,オーバードライブギター,ディストーションギター,ギターハーモニクス,アコースティックベース,エレキベース（指）,エレキベース（ピック）,フレットレスベース,スラップベース1,スラップベース2,シンセベース1,シンセベース2,バイオリン,ビオラ,チェロ,コントラバス,トレモロ・ストリングス,ピチカート・ストリングス,ハープ,ティンパニ,ストリングス,スローストリングス,シンセストリングス1,シンセストリングス2,コーラス（アー）,ボイス（ウー）,シンセボイス,オーケストラヒット,トランペット,トロンボーン,チューバ,ミュートトランペット,ホルン,ブラスセクション,シンセブラス1,シンセブラス2,ソプラノサックス,アルトサックス,テナーサックス,バリトンサックス,オーボエ,イングリッシュホルン,ファゴット,クラリネット,ピッコロ,フルート,リコーダー,パンフルート,ボトルブロウ,尺八,口笛,オカリナ,シンセリード（矩形波）,シンセリード（ノコギリ波）,シンセリード（カリオペ）,シンセリード（チフ）,シンセリード（チャラン）,シンセリード（ボイス）,シンセリード（5度）,シンセリード（ベース＋リード）,シンセパッド（ニューエイジ）,シンセパッド（ウォーム）,シンセパッド（ポリシンセ）,シンセパッド（クワイア）,シンセパッド（ボウ）,シンセパッド（メタリック）,シンセパッド（ハロー）,シンセパッド（スイープ）,効果音（雨）,効果音（サウンドトラック）,効果音（クリスタル）,効果音（アトモスフィア）,効果音（ブライトネス）,効果音（ゴブリン）,効果音（エコー）,効果音（SF）,シタール,バンジョー,三味線,琴,カリンバ,バグパイプ,フィドル,シャナイ,ティンクルベル,アゴゴ,スチールドラム,ウッドブロック,太鼓,メロディックタム,シンセドラム,リバースシンバル,ギターフレットノイズ,ブレスノイズ,波の音,鳥のさえずり,電話のベル,ヘリコプター,拍手,銃声'.split(',');
+function decodeText(bytes) {
+  try { return new TextDecoder('utf-8', { fatal: true }).decode(bytes); } catch {}
+  try { return new TextDecoder('shift_jis').decode(bytes); } catch { return ''; }
+}
+function parseMidi(buf) {
+  const d = new DataView(buf), u8 = new Uint8Array(buf), N = u8.length;
+  const tag = p => String.fromCharCode(u8[p], u8[p + 1], u8[p + 2], u8[p + 3]);
+  // some files carry a RIFF wrapper: find the MIDI header
+  let base = 0; while (base + 14 <= N && tag(base) !== 'MThd') base++;
+  if (base + 14 > N) throw new Error('MIDIファイルではありません');
+  const ntr = d.getUint16(base + 10), div = d.getUint16(base + 12);
+  if (div & 0x8000) throw new Error('この形式のMIDIには対応していません');
+  let p = base + 8 + d.getUint32(base + 4);
+  const ev = [], trName = {};
+  for (let tr = 0; tr < ntr && p + 8 <= N; tr++) {
+    while (p + 8 <= N && tag(p) !== 'MTrk') p += 8 + d.getUint32(p + 4);
+    if (p + 8 > N) break;
+    let q = p + 8; const end = Math.min(N, q + d.getUint32(p + 4)); p = end;
+    let tick = 0, rs = 0;
+    const vl = () => { let v = 0, b; do { b = u8[q++]; v = (v << 7) | (b & 0x7f); } while (b & 0x80 && q < end); return v; };
+    while (q < end) {
+      tick += vl();
+      let st = u8[q];
+      if (st < 0x80) st = rs; else { q++; if (st < 0xf0) rs = st; }
+      if (st === 0xff) {
+        const type = u8[q++], l = vl();
+        if (type === 0x51 && l >= 3) ev.push({ tick, k: 0, v: (u8[q] << 16) | (u8[q + 1] << 8) | u8[q + 2] });
+        else if (type === 0x03 && !trName[tr]) trName[tr] = decodeText(u8.slice(q, q + l)).trim();
+        q += l;
+      } else if (st === 0xf0 || st === 0xf7) { q += vl(); }
+      else {
+        const ty = st & 0xf0, ch = st & 15, a = u8[q++], b = (ty === 0xc0 || ty === 0xd0) ? 0 : u8[q++];
+        if (ty === 0x90 && b > 0) ev.push({ tick, k: 3, ch, n: a, v: b, tr });
+        else if (ty === 0x80 || ty === 0x90) ev.push({ tick, k: 2, ch, n: a });
+        else if (ty === 0xc0) ev.push({ tick, k: 1, ch, v: a });
+        else if (ty === 0xb0 && a === 7) ev.push({ tick, k: 1.5, ch, v: b });
+      }
+    }
+  }
+  // same tick: tempo, program, volume, note-off, then note-on
+  ev.sort((x, y) => x.tick - y.tick || x.k - y.k);
+  let tempo = 500000, lastTick = 0, sec = 0;
+  const prog = new Array(16).fill(0), vol = new Array(16).fill(100), open = new Map(), notes = [];
+  for (const e of ev) {
+    sec += (e.tick - lastTick) * tempo / 1e6 / div; lastTick = e.tick;
+    if (e.k === 0) tempo = e.v;
+    else if (e.k === 1) prog[e.ch] = e.v;
+    else if (e.k === 1.5) vol[e.ch] = e.v;
+    else if (e.k === 3) { const key = e.ch * 128 + e.n; if (!open.has(key)) open.set(key, []); open.get(key).push({ s: sec, n: e.n, ch: e.ch, prog: prog[e.ch], v: e.v / 127 * (.35 + .65 * vol[e.ch] / 127), tr: e.tr }); }
+    else { const L = open.get(e.ch * 128 + e.n); if (L && L.length) { const o = L.shift(); o.e = sec; notes.push(o); } }
+  }
+  for (const L of open.values()) for (const o of L) { o.e = sec; notes.push(o); }
+  return buildSong(notes, trName);
+}
+function buildSong(notes, trName) {
+  notes = notes.filter(n => n.e > n.s - .001);
+  if (!notes.length) throw new Error('音符が見つかりません');
+  // parts: channel 10 = drums, otherwise channel + instrument
+  const map = new Map();
+  for (const n of notes) {
+    const key = n.ch === 9 ? 'drums' : n.ch + ':' + n.prog;
+    if (!map.has(key)) map.set(key, { key, drums: n.ch === 9, prog: n.prog, tr: n.tr, notes: [] });
+    map.get(key).notes.push(n);
+  }
+  const parts = [...map.values()];
+  for (const P of parts) {
+    P.notes.sort((a, b) => a.s - b.s);
+    let lo = 127, hi = 0, sum = 0, maxLen = 0;
+    for (const n of P.notes) { lo = Math.min(lo, n.n); hi = Math.max(hi, n.n); sum += n.n; maxLen = Math.max(maxLen, n.e - n.s); }
+    P.lo = lo - 1; P.hi = hi + 1; P.avg = sum / P.notes.length; P.maxLen = Math.min(maxLen, 30);
+    const tn = trName[P.tr];
+    P.name = P.drums ? 'ドラム・打楽器' : GM[P.prog];
+    if (tn && tn !== P.name && !/^(track|トラック)\s*\d*$/i.test(tn) && tn.length <= 24) P.sub = tn;
+  }
+  parts.sort((a, b) => (a.drums - b.drums) || (b.avg - a.avg));
+  const seen = {};
+  parts.forEach((P, i) => { seen[P.name] = (seen[P.name] || 0) + 1; if (seen[P.name] > 1) P.name += ' ' + seen[P.name]; P.hue = (i * 137.5 + 330) % 360; });
+  for (const P of parts) if (!P.drums) buildLines(P);
+  // every line gets its own colour: lines sorted top to bottom, then colours picked far apart on the colour wheel
+  // (a golden-angle walk), so neighbouring lines never look alike
+  const all = parts.flatMap(P => P.drums ? [] : P.lines.map(L => [L, L.reduce((a, g) => a + g.n, 0) / L.length]));
+  all.sort((a, b) => b[1] - a[1]);
+  all.forEach(([L], i) => { L.hue = (i * 137.508 + 345) % 360; });
+  // and its own depth (-.5 near ... +.5 far), mixed so lines next to each other in pitch are at different depths
+  all.forEach(([L], i) => { L.z = all.length < 2 ? 0 : ((i * .618034) % 1) - .5; });
+  findMotifs(parts);
+  return { parts, dur: Math.max(...notes.map(n => n.e)) };
+}
+// split one instrument into its voices (melody, bass, inner voice ...): one line per voice.
+// 1) how many voices: the number of notes that sound together for a good part of the time
+// 2) notes that start together are matched to voices top-to-bottom, each to the voice whose last
+//    note is nearest, so a voice follows its own melody even when the voices move apart or cross over.
+function buildLines(P) {
+  const ns = [...P.notes].sort((a, b) => a.s - b.s || b.n - a.n);
+  // time spent at each number of simultaneous notes
+  const ev = []; for (const n of ns) { ev.push([n.s, 1]); ev.push([n.e, -1]); }
+  ev.sort((a, b) => a[0] - b[0] || a[1] - b[1]);
+  const at = new Array(9).fill(0); let c = 0, last = 0, sounding = 0;
+  for (const [t, d] of ev) { if (c > 0) { at[Math.min(c, 8)] += t - last; sounding += t - last; } c += d; last = t; }
+  let k = 1;
+  for (let v = 2; v <= 4; v++) { let tm = 0; for (let x = v; x <= 8; x++) tm += at[x]; if (tm >= sounding * .22) k = v; }
+  // voices start spread over the instrument's range, highest first
+  const voices = [];
+  for (let i = 0; i < k; i++) voices.push({ last: P.hi - (i + .5) * (P.hi - P.lo) / k, end: -1, notes: [] });
+  const free = (v, t) => v.end <= t + .06;
+  for (let i = 0; i < ns.length;) {
+    const g = [ns[i]]; let j = i + 1;
+    while (j < ns.length && ns[j].s - ns[i].s < .035) g.push(ns[j++]);
+    i = j;
+    g.sort((a, b) => b.n - a.n);
+    const t = g[0].s, fv = voices.filter(v => free(v, t));
+    // ordered matching of notes (high -> low) to free voices (top -> bottom); a note may stay unmatched
+    const m = g.length, q = fv.length, INF = 1e9;
+    const f = Array.from({ length: m + 1 }, () => new Array(q + 1).fill(INF)), how = Array.from({ length: m + 1 }, () => new Array(q + 1).fill(0));
+    f[0][0] = 0;
+    for (let a = 0; a <= m; a++) for (let b = 0; b <= q; b++) {
+      const cur = f[a][b]; if (cur >= INF) continue;
+      if (a < m && b < q) { const cost = cur + Math.abs(g[a].n - fv[b].last); if (cost < f[a + 1][b + 1]) { f[a + 1][b + 1] = cost; how[a + 1][b + 1] = 1; } }
+      if (a < m && cur + 14 < f[a + 1][b]) { f[a + 1][b] = cur + 14; how[a + 1][b] = 2; }      // leave the note out of the lines
+      if (b < q && cur < f[a][b + 1]) { f[a][b + 1] = cur; how[a][b + 1] = 3; }                  // this voice rests
+    }
+    for (let a = m, b = q; a > 0 || b > 0;) {
+      const h = how[a][b];
+      if (h === 1) { const v = fv[b - 1], n = g[a - 1]; v.notes.push(n); v.last = n.n; v.end = n.e; a--; b--; }
+      else if (h === 2) a--; else b--;
+    }
+  }
+  // a voice with only a handful of notes is not worth its own line
+  const lines = [];
+  for (const v of voices) {
+    if (v.notes.length < Math.max(4, P.notes.length * .03)) continue;
+    const vn = v.notes.sort((a, b) => a.s - b.s), segs = [];
+    for (let i = 0; i < vn.length; i++) {
+      const n = vn[i], nx = vn[i + 1], e = nx ? Math.min(n.e, nx.s) : n.e;
+      if (e - n.s > .004) segs.push({ s: n.s, e, n: n.n, v: n.v, motif: false, note: n });
+    }
+    if (segs.length) lines.push(segs);
+  }
+  if (!lines.length && ns.length) lines.push(ns.map(n => ({ s: n.s, e: n.e, n: n.n, v: n.v, motif: false, note: n })));
+  P.lines = lines;
+}
+// motif = the same melodic shape coming back. Shape = steps up/down on the scale of the piece,
+// with repeated notes merged and rhythm ignored (so "ドーレーミー" and "ドドレレミミ" match,
+// and a phrase moved to another degree of the scale still matches).
+function findMotifs(parts) {
+  // 1) key of the piece: the major scale that holds most of the sounding time
+  const hist = new Array(12).fill(0);
+  for (const P of parts) if (!P.drums) for (const n of P.notes) hist[n.n % 12] += n.e - n.s;
+  const MAJ = [0, 2, 4, 5, 7, 9, 11];
+  let tonic = 0, best = -1;
+  for (let t = 0; t < 12; t++) { const sc = MAJ.reduce((a, k) => a + hist[(t + k) % 12], 0); if (sc > best) { best = sc; tonic = t; } }
+  const DEG = [0, 0, 1, 1, 2, 3, 3, 4, 4, 5, 5, 6];                 // chromatic notes fall to the degree below
+  const degree = n => { const r = n - tonic; return Math.floor(r / 12) * 7 + DEG[((r % 12) + 12) % 12]; };
+  // 2) melodic streams: each instrument's single line, repeated pitches merged into one event
+  const streams = [];
+  for (const P of parts) for (const line of (P.drums ? [] : P.lines)) {
+    const ev = [];
+    for (const g of line) {
+      const last = ev[ev.length - 1];
+      if (last && (last.n === g.n || last.notes.includes(g.note)) && g.s - last.e < 1.2) { if (!last.notes.includes(g.note)) last.notes.push(g.note); last.e = g.e; }
+      else ev.push({ n: g.n, d: degree(g.n), s: g.s, e: g.e, notes: [g.note] });
+    }
+    if (ev.length >= 4) streams.push(ev);
+    // passages where a short figure (2-6 notes) goes round at least three times are accompaniment, not motifs
+    const iv = ev.map((x, i) => i ? x.d - ev[i - 1].d : 0);
+    for (let p = 2; p <= 6; p++) for (let i = 1; i + p < iv.length;) {
+      let r = 0; while (i + r + p < iv.length && iv[i + r] === iv[i + r + p]) r++;
+      if (r >= 2 * p) for (let x = i - 1; x <= Math.min(ev.length - 1, i + r + p); x++) ev[x].loop = true;
+      i += Math.max(1, r);
+    }
+  }
+  const total = streams.reduce((a, v) => a + v.length, 0); if (!total) return;
+  // a shape that is just a short figure going round and round (an arpeggio, an Alberti bass) is accompaniment
+  const periodic = key => { const d = key.split(',').slice(0, -1); for (let p = 1; p <= d.length / 2; p++) { let ok = true; for (let i = 0; i + p < d.length; i++) if (d[i] !== d[i + p]) { ok = false; break; } if (ok) return true; } return false; };
+  // 3) count every shape of 4..12 events
+  const cands = [];
+  for (let L = 4; L <= 12; L++) {
+    const map = new Map();
+    for (const v of streams) for (let i = 0; i + L <= v.length; i++) {
+      let key = '', lo = 1e9, hi = -1e9, bad = false;
+      for (let j = 0; j < L; j++) {
+        if (j && v[i + j].s - v[i + j - 1].e > 3) { bad = true; break; }          // a long silence ends a phrase
+        lo = Math.min(lo, v[i + j].d); hi = Math.max(hi, v[i + j].d);
+        if (j) key += (v[i + j].d - v[i + j - 1].d) + ',';
+      }
+      let loops = 0; for (let j = 0; j < L; j++) if (v[i + j].loop) loops++;
+      if (bad || hi - lo < 2 || periodic(key) || loops > L / 2) continue;
+      if (!map.has(key)) map.set(key, []);
+      map.get(key).push([v, i]);
+    }
+    for (const occ of map.values()) {
+      const keep = [], lastEnd = new Map(); let backToBack = 0;
+      for (const [v, i] of occ) {
+        const le = lastEnd.has(v) ? lastEnd.get(v) : -1;
+        if (i > le) { if (i === le + 1) backToBack++; keep.push([v, i]); lastEnd.set(v, i + L - 1); }
+      }
+      const c = keep.length;
+      if (c < 3 && !(c >= 2 && L >= 6)) continue;
+      let score = Math.pow(L, 1.5) * c;            // longer shapes win over fragments that sit inside them
+      if (backToBack > c * .5) score *= .1;           // a figure that just loops (accompaniment) is not a motif
+      cands.push({ L, occ: keep, score });
+    }
+  }
+  // 4) take the strongest shapes, up to about 40% of the melody
+  cands.sort((a, b) => b.score - a.score || b.L - a.L);
+  // the strongest shape is always shown (in a round it really is most of the piece); others only while room is left
+  const marked = new Set(); let used = 0, first = true;
+  for (const c of cands) {
+    if (!first && used >= total * .4) break;
+    let overlap = 0; for (const [v, i] of c.occ) for (let j = 0; j < c.L; j++) if (marked.has(v[i + j])) overlap++;
+    if (!first && overlap > c.occ.length * c.L * .6) continue;
+    if (!first && used + c.occ.length * c.L - overlap > total * .55) continue;
+    first = false;
+    for (const [v, i] of c.occ) for (let j = 0; j < c.L; j++) if (!marked.has(v[i + j])) { marked.add(v[i + j]); used++; }
+  }
+  for (const e of marked) for (const n of e.notes) n.motif = true;
+  for (const P of parts) if (P.lines) for (const L of P.lines) for (const g of L) g.motif = !!g.note.motif;
+}
+
+/* sample: "かえるの合唱" (a round) — four instruments enter two bars apart */
+function sampleSong() {
+  const qn = .6, mel = [[0,1,0],[1,1,2],[2,1,4],[3,1,5],[4,1,4],[5,1,2],[6,2,0],[8,1,4],[9,1,5],[10,1,7],[11,1,9],[12,1,7],[13,1,5],[14,2,4],
+    [16,1,0],[18,1,0],[20,1,0],[22,1,0],[24,.5,0],[24.5,.5,0],[25,.5,2],[25.5,.5,2],[26,.5,4],[26.5,.5,4],[27,.5,5],[27.5,.5,5],[28,1,4],[29,1,2],[30,2,0]];
+  const voices = [[0, 73, 72, 0, 'フルート'], [1, 40, 72, 8, 'バイオリン'], [2, 71, 60, 16, 'クラリネット'], [3, 42, 48, 24, 'チェロ']];
+  const notes = [], trName = {};
+  for (const [ch, prog, base, start, name] of voices) {
+    trName[ch] = name;
+    for (let r = 0; r < 2; r++) for (const [t, len, iv] of mel) {
+      const s = (start + r * 32 + t) * qn;
+      notes.push({ s, e: s + len * qn * .92, n: base + iv, ch, prog, v: .75, tr: ch });
+    }
+  }
+  return buildSong(notes, trName);
+}
+
+/* ================= playback (simple built-in synth) ================= */
+/* The whole piece is rendered to sound ahead of time (OfflineAudioContext), a few seconds at a time,
+   joined into one WAV and played by the <audio> element. Nothing is synthesized live while playing. */
+const SEG = 6, SR = 32000, GAP = 1.5;  // seconds per rendered piece, sample rate, silence before the piece repeats
+const wavCache = new Map();
+function startSong(m, title) {
+  stopSong();
+  m.all = m.parts.flatMap(P => P.notes).sort((a, b) => a.s - b.s);
+  // too many notes at once sounds muddy: drop the quietest extra ones (the picture still shows them)
+  m.mute = new Set(); const live = [];
+  for (const n of m.all) {
+    for (let i = live.length - 1; i >= 0; i--) if (live[i] <= n.s) live.splice(i, 1);
+    if (live.length >= 24 || (live.length >= 16 && n.v < .5)) { m.mute.add(n); continue; }
+    live.push(n.s + Math.min(Math.max(.05, n.e - n.s), 1.5));
+  }
+  m.nSeg = Math.max(1, Math.ceil(m.dur / SEG));
+  m.bySeg = Array.from({ length: m.nSeg }, () => []);
+  for (const n of m.all) if (!m.mute.has(n)) m.bySeg[Math.min(m.nSeg - 1, Math.floor(n.s / SEG))].push(n);
+  m.ready = false;
+  song = m; userPaused = false;
+  $('src').textContent = '♪ ' + title; $('pause').disabled = false; $('pause').textContent = '❚❚';
+  $('intro').classList.add('hide'); wake();
+  prepare(m);
+}
+async function renderSeg(m, k) {
+  const base = k * SEG, notes = m.bySeg[k];
+  let end = SEG;  // long notes ring on past the piece's end
+  for (const n of notes) end = Math.max(end, n.e - base + .8, n.s - base + 1.5);
+  const OAC = window.OfflineAudioContext || window.webkitOfflineAudioContext;
+  const C = new OAC(1, Math.ceil(Math.min(end, SEG + 40) * SR), SR);
+  if (!noiseBuf) { noiseBuf = C.createBuffer(1, SR, SR); const d = noiseBuf.getChannelData(0); for (let i = 0; i < d.length; i++) d[i] = Math.random() * 2 - 1; }
+  const out = C.createGain(); out.connect(C.destination);
+  for (const n of notes) playNote(C, out, n.s - base, n);
+  return await new Promise((res, rej) => {
+    C.oncomplete = e => res(e.renderedBuffer);
+    const p = C.startRendering(); if (p && p.then) p.then(res, rej);
+  });
+}
+function wavURL(x) {
+  const n = x.length, b = new ArrayBuffer(44 + n * 2), v = new DataView(b), w = (o, t) => { for (let i = 0; i < t.length; i++) v.setUint8(o + i, t.charCodeAt(i)); };
+  w(0, 'RIFF'); v.setUint32(4, 36 + n * 2, true); w(8, 'WAVEfmt '); v.setUint32(16, 16, true); v.setUint16(20, 1, true); v.setUint16(22, 1, true);
+  v.setUint32(24, SR, true); v.setUint32(28, SR * 2, true); v.setUint16(32, 2, true); v.setUint16(34, 16, true); w(36, 'data'); v.setUint32(40, n * 2, true);
+  for (let i = 0; i < n; i++) v.setInt16(44 + i * 2, Math.max(-1, Math.min(1, x[i])) * 32767, true);
+  return URL.createObjectURL(new Blob([b], { type: 'audio/wav' }));
+}
+async function prepare(m) {
+  let url = m.libId && wavCache.get(m.libId);
+  if (!url) {
+    toast('音を準備しています…', 60000);
+    const total = Math.ceil((m.dur + GAP) * SR), mix = new Float32Array(total);
+    for (let k = 0; k < m.nSeg; k++) {
+      let buf = null; try { buf = await renderSeg(m, k); } catch {}
+      if (song !== m) return;
+      if (buf) { const d = buf.getChannelData(0), o = Math.round(k * SEG * SR); for (let i = 0; i < d.length && o + i < total; i++) mix[o + i] += d[i]; }
+      if (m.nSeg > 3) toast(`音を準備しています… ${Math.round((k + 1) / m.nSeg * 100)}%`, 60000);
+    }
+    // even out the loudness: bring the loudest moment to just under full scale, softly limiting rare peaks
+    const sorted = Float32Array.from(mix.filter((_, i) => i % 7 === 0).map(Math.abs)).sort();
+    const ref = sorted[Math.floor(sorted.length * .999)] || 1, gain = Math.min(6, .8 / ref);
+    for (let i = 0; i < total; i++) mix[i] = Math.tanh(mix[i] * gain);
+    url = wavURL(mix);
+    if (m.libId) wavCache.set(m.libId, url);
+  }
+  if (song !== m) return;
+  $('toast').classList.add('hide');
+  player.src = url; player.currentTime = 0; m.ready = true;
+  if (!userPaused) player.play().catch(() => toast('画面をタップすると音が出ます', 5000));
+}
+function stopSong() {
+  if (!song) return;
+  song = null; player.pause();
+}
+// what you HEAR now = where the player is in the piece
+function songNow() { return song && song.ready ? player.currentTime : -1; }
+function noiseHit(C, t, dur, type, f, vol, out) {
+  const s = C.createBufferSource(), fl = C.createBiquadFilter(), g = C.createGain();
+  s.buffer = noiseBuf; fl.type = type; fl.frequency.value = f;
+  g.gain.setValueAtTime(vol, t); g.gain.exponentialRampToValueAtTime(.0001, t + dur);
+  s.connect(fl); fl.connect(g); g.connect(out); s.start(t, Math.random() * .5); s.stop(t + dur + .02);
+}
+function toneHit(C, t, f0, f1, dur, vol, out) {
+  const o = C.createOscillator(), g = C.createGain();
+  o.frequency.setValueAtTime(f0, t); o.frequency.exponentialRampToValueAtTime(f1, t + dur * .6);
+  g.gain.setValueAtTime(vol, t); g.gain.exponentialRampToValueAtTime(.0001, t + dur);
+  o.connect(g); g.connect(out); o.start(t); o.stop(t + dur + .02);
+}
+function playNote(C, out, t, n) {
+  const dur = Math.max(.05, n.e - n.s), v = n.v;
+  if (n.ch === 9) {
+    const k = n.n;
+    if (k === 35 || k === 36) toneHit(C, t, 150, 45, .4, .9 * v, out);
+    else if (k >= 37 && k <= 40) { noiseHit(C, t, .18, 'bandpass', 1800, .6 * v, out); toneHit(C, t, 220, 160, .1, .3 * v, out); }
+    else if (k === 42 || k === 44) noiseHit(C, t, .05, 'highpass', 7000, .3 * v, out);
+    else if (k === 46) noiseHit(C, t, .3, 'highpass', 7000, .3 * v, out);
+    else if (k === 49 || k === 52 || k === 55 || k === 57) noiseHit(C, t, 1.3, 'highpass', 5000, .35 * v, out);
+    else if (k === 51 || k === 53 || k === 59) noiseHit(C, t, .5, 'highpass', 8000, .2 * v, out);
+    else if (k >= 41 && k <= 50) toneHit(C, t, 90 + (k - 41) * 18, 60 + (k - 41) * 12, .35, .6 * v, out);
+    else noiseHit(C, t, .08, 'bandpass', 2500, .3 * v, out);
+    return;
+  }
+  const f = 440 * Math.pow(2, (n.n - 69) / 12), fam = n.prog >> 3;
+  let types = ['triangle'], att = .005, rel = .15, cut = 5000, perc = false, pdec = 1.5;
+  switch (fam) {
+    case 0: types = ['triangle', 'sine']; perc = true; pdec = Math.min(3, .5 + 260 / f); break;   // piano
+    case 1: types = ['sine']; perc = true; pdec = 1.2; cut = 8000; break;                           // bells, mallets
+    case 2: types = ['square', 'sine']; att = .01; cut = 2800; break;                               // organ
+    case 3: types = ['triangle', 'sawtooth']; perc = true; pdec = 1.4; cut = 3200; break;           // guitar
+    case 4: types = ['triangle']; perc = true; pdec = 1.3; cut = 900; break;                        // bass
+    case 5: case 6: types = ['sawtooth', 'sawtooth']; att = .08; rel = .35; cut = 2500; break;      // strings, ensemble
+    case 7: types = ['sawtooth']; att = .04; cut = 2200; break;                                     // brass
+    case 8: types = ['square']; att = .03; cut = 2300; break;                                       // reeds
+    case 9: types = ['sine', 'triangle']; att = .04; cut = 4000; break;                             // flutes
+    case 10: types = ['square', 'sawtooth']; att = .01; cut = 4000; break;                          // synth lead
+    case 11: types = ['sawtooth', 'triangle']; att = .3; rel = .6; cut = 1800; break;               // synth pad
+    default: perc = true; pdec = 1;
+  }
+  if (n.prog === 45 || n.prog === 46) { types = ['triangle']; perc = true; pdec = .7; }   // pizzicato, harp
+  if (n.prog === 47) { types = ['sine']; perc = true; pdec = 1.2; cut = 700; }           // timpani
+  const g = C.createGain(), lp = C.createBiquadFilter(), vol = .14 * v;
+  lp.type = 'lowpass'; lp.frequency.value = cut; lp.connect(g); g.connect(out);
+  const stop = t + (perc ? Math.min(dur + rel, pdec * 1.2) : dur + rel) + .05;
+  const o = C.createOscillator(); o.type = types[0]; o.frequency.value = f; o.connect(lp); o.start(t); o.stop(stop);
+  o.onended = () => { lp.disconnect(); g.disconnect(); };
+  g.gain.setValueAtTime(0, t); g.gain.linearRampToValueAtTime(vol, t + att);
+  if (perc) { g.gain.setTargetAtTime(0, t + att, pdec / 4); g.gain.setTargetAtTime(0, t + dur, .08); }
+  else { g.gain.setValueAtTime(vol, t + Math.max(att, dur)); g.gain.linearRampToValueAtTime(0, t + Math.max(att, dur) + rel); }
+}
+
+/* ================= controls ================= */
+async function openSong(make, title, libId) {
+  let m;
+  try { m = await make(); } catch (err) { toast('MIDIを読み込めませんでした（' + String(err.message || err).slice(0, 60) + '）', 6000); return; }
+  m.libId = libId; startSong(m, title);
+}
+/* ---------- library of MIDI files kept on the server ---------- */
+const SAMPLE = 'sample', SAMPLE_NAME = 'サンプル：かえるの合唱（輪唱）';
+let lib = [], maxSongs = 20, adminPw = store.get('cs_admin') || '';
+// also served from www.somikubota.jp/chromasound/: keep API calls inside that folder
+const BASE = location.pathname.startsWith('/chromasound') ? '/chromasound' : '';
+const isAdmin = () => !!adminPw;
+async function api(method, q = '', body) {
+  const r = await fetch(BASE + '/api/songs' + q, { method, cache: 'no-store',
+    headers: { ...(body ? { 'Content-Type': 'application/json' } : {}), ...(adminPw ? { 'x-admin': adminPw } : {}) },
+    body: body ? JSON.stringify(body) : undefined });
+  const j = await r.json().catch(() => ({}));
+  if (!r.ok) { const e = new Error(j.error || ('エラー ' + r.status)); e.status = r.status; throw e; }
+  return j;
+}
+async function loadLib() {
+  try { const j = await api('GET'); lib = j.songs || []; maxSongs = j.max || 20; }
+  catch { lib = []; toast('曲の一覧を読み込めませんでした', 5000); }
+  lib.sort((a, b) => a.name.localeCompare(b.name, 'ja'));
+  renderPick(); renderList();
+}
+function renderPick() {
+  const sel = $('lib'), cur = sel.value || store.get('cs_last') || '';
+  sel.innerHTML = '';
+  const add = (v, t) => { const o = document.createElement('option'); o.value = v; o.textContent = t; sel.appendChild(o); return o; };
+  add('', '♫ 曲を選ぶ…').disabled = true;
+  for (const s of lib) add(s.id, s.name);
+  add(SAMPLE, SAMPLE_NAME);
+  sel.value = [...sel.options].some(o => o.value === cur && !o.disabled) && song ? cur : '';
+}
+const fmtDur = s => s ? `${Math.floor(s / 60)}:${String(Math.round(s % 60)).padStart(2, '0')}` : '';
+function renderAdmin() {
+  $('manage').hidden = !(isAdmin() || location.hash === '#admin');
+  $('loginBox').hidden = isAdmin(); $('adminBox').hidden = !isAdmin();
+}
+function renderList() {
+  $('count').textContent = `${lib.length} / ${maxSongs}曲`;
+  const ul = $('songs'); ul.innerHTML = '';
+  if (!lib.length) { ul.innerHTML = '<li class="empty" style="border:0;background:none">まだ登録された曲はありません</li>'; return; }
+  for (const s of lib) {
+    const li = document.createElement('li');
+    li.innerHTML = '<div class="meta"><input maxlength="60" aria-label="曲名"><small></small></div><button class="play">▶</button><button class="del">削除</button>';
+    const inp = li.querySelector('input');
+    inp.value = s.name;
+    li.querySelector('small').textContent = [s.file, fmtDur(s.dur), s.parts ? s.parts + 'パート' : ''].filter(Boolean).join(' ・ ');
+    inp.onchange = async () => {
+      const name = inp.value.trim() || s.name; inp.value = name; if (name === s.name) return;
+      try { await api('PATCH', '', { id: s.id, name }); s.name = name; if (song && song.libId === s.id) $('src').textContent = '♪ ' + name; renderPick(); }
+      catch (e) { inp.value = s.name; authFail(e) || toast('名前を変えられませんでした：' + e.message, 5000); }
+    };
+    inp.onkeydown = e => { if (e.key === 'Enter') inp.blur(); };
+    li.querySelector('.play').onclick = () => { closePanel(); playLib(s.id); };
+    li.querySelector('.del').onclick = async () => {
+      if (!confirm(`「${s.name}」を削除しますか？`)) return;
+      li.classList.add('busy');
+      try { await api('DELETE', '?id=' + encodeURIComponent(s.id)); if (song && song.libId === s.id) { stopSong(); $('src').textContent = ''; $('pause').disabled = true; } }
+      catch (e) { authFail(e) || toast('削除できませんでした：' + e.message, 5000); }
+      await loadLib();
+    };
+    ul.appendChild(li);
+  }
+}
+function authFail(e) {
+  if (e.status !== 401) return false;
+  adminPw = ''; store.set('cs_admin', ''); renderAdmin(); toast('パスワードが違います。もう一度ログインしてください', 5000); return true;
+}
+const cache = new Map();
+async function playLib(id) {
+  $('lib').value = id; store.set('cs_last', id);
+  if (id === SAMPLE) return openSong(sampleSong, SAMPLE_NAME, SAMPLE);
+  const s = lib.find(x => x.id === id); if (!s) { toast('曲が見つかりませんでした'); return loadLib(); }
+  openSong(async () => {
+    if (!cache.has(id)) {
+      const r = await fetch(BASE + '/api/songs?id=' + encodeURIComponent(id));
+      if (!r.ok) throw new Error('曲を取得できませんでした');
+      cache.set(id, await r.arrayBuffer());
+    }
+    return parseMidi(cache.get(id).slice(0));
+  }, s.name, id);
+}
+$('lib').onchange = e => { if (e.target.value) playLib(e.target.value); };
+function openPanel() { renderAdmin(); $('panel').classList.remove('off'); clearTimeout(idle); }
+function closePanel() { $('panel').classList.add('off'); renderPick(); wake(); }
+$('manage').onclick = openPanel;
+$('close').onclick = closePanel;
+$('loginForm').onsubmit = async e => {
+  e.preventDefault();
+  adminPw = $('pw').value.trim(); if (!adminPw) return;
+  try { await api('POST', '?check=1'); store.set('cs_admin', adminPw); $('pw').value = ''; renderAdmin(); await loadLib(); }
+  catch (err) { adminPw = ''; toast(err.status === 401 ? 'パスワードが違います' : 'ログインできませんでした：' + err.message, 5000); }
+};
+const b64 = buf => { const u = new Uint8Array(buf); let s = ''; for (let i = 0; i < u.length; i += 0x8000) s += String.fromCharCode.apply(null, u.subarray(i, i + 0x8000)); return btoa(s); };
+$('file').onchange = async e => {
+  const files = [...e.target.files]; e.target.value = ''; if (!files.length) return;
+  $('adminBox').classList.add('busy'); toast('登録しています…', 20000);
+  let ok = 0; const bad = [];
+  for (const f of files) {
+    try {
+      const data = await f.arrayBuffer(), m = parseMidi(data.slice(0));       // check it really is a MIDI file
+      await api('POST', '', { name: f.name.replace(/\.[^.]+$/, ''), file: f.name, parts: m.parts.length, dur: m.dur, data: b64(data) });
+      ok++;
+    } catch (err) { if (authFail(err)) break; bad.push(f.name + (err.message && err.status ? '（' + err.message + '）' : '')); }
+  }
+  $('adminBox').classList.remove('busy');
+  await loadLib();
+  toast((ok ? `${ok}曲を登録しました` : '') + (bad.length ? `${ok ? '／' : ''}登録できなかったファイル：${bad.join('、').slice(0, 100)}` : ''), 6000);
+};
+addEventListener('hashchange', renderAdmin);
+renderAdmin();
+loadLib();
+$('pause').onclick = async () => {
+  if (!song) return;
+  if (!player.paused) { userPaused = true; player.pause(); $('pause').textContent = '▶'; }
+  else { userPaused = false; if (song.ready) player.play().catch(() => {}); $('pause').textContent = '❚❚'; }
+};
+let idle;
+function wake() {
+  ['bar', 'top'].forEach(id => $(id).classList.remove('hide')); clearTimeout(idle);
+  idle = setTimeout(() => { if (song && $('panel').classList.contains('off')) ['bar', 'top'].forEach(id => $(id).classList.add('hide')); }, 4000);
+}
+['pointerdown', 'pointermove'].forEach(ev => addEventListener(ev, wake));
+
+/* ================= drawing ================= */
+function frame() {
+  cx.globalCompositeOperation = 'source-over';
+  cx.fillStyle = 'rgba(7,6,11,.65)';
+  cx.fillRect(0, 0, W, H);
+  cx.globalCompositeOperation = 'lighter';
+  if (song) drawSpiral(); else if (sparks.length) drawSparks();
+  requestAnimationFrame(frame);
+}
+
+/* light that bursts out where a line changes pitch: lots of little shapes flying apart */
+const sparks = []; let lastNow = 0;
+const SHAPES = ['dot', 'star', 'tri', 'diamond', 'heart', 'square', 'ring', 'cross', 'note'];
+// d = length of the note: a short note gives a small quick pop, a long note sends light drifting slowly and far
+function sparkle(x, y, hue, big, dir, d = .4) {
+  const k = Math.max(0, Math.min(1, (d - .08) / 1.1)), lerp = (a, b) => a + (b - a) * k;
+  const n = Math.round(lerp(big ? 14 : 8, big ? 70 : 46));
+  for (let i = 0; i < n; i++) {
+    const a = Math.random() * Math.PI * 2, sp = (big ? 1.3 : 1) * lerp(1.2 + Math.random() * 2.6, .5 + Math.random() * 2.4);
+    const shape = Math.random() < .35 ? 'dot' : SHAPES[1 + (Math.random() * (SHAPES.length - 1) | 0)];
+    sparks.push({ x, y, vx: Math.cos(a) * sp - lerp(.5, .35), vy: Math.sin(a) * sp - dir * lerp(.8, .5), life: 1,
+      decay: 1 / (lerp(14, 150) * (.75 + Math.random() * .5)), fr: lerp(.9, .985), grav: lerp(.02, .004),
+      r: (shape === 'dot' ? 1.3 : 4.2) * (big ? 1.35 : 1) * (.6 + Math.random() * .9) * lerp(.75, 1.15), hue: hue + (Math.random() - .5) * 90,
+      shape, rot: Math.random() * 6.3, vr: (Math.random() - .5) * lerp(.3, .08), tw: Math.random() * 6.3 });
+  }
+  const st = Math.round(lerp(2, big ? 8 : 5));
+  for (let i = 0; i < st; i++) {                                 // a few streaks of light
+    const a = Math.random() * Math.PI * 2, sp = lerp(5, 4) * (.6 + Math.random() * .6);
+    sparks.push({ streak: true, x, y, vx: Math.cos(a) * sp, vy: Math.sin(a) * sp, life: 1, decay: 1 / (lerp(9, 45) * (.8 + Math.random() * .4)), fr: lerp(.85, .95), hue });
+  }
+  sparks.push({ ring: true, x, y, r: 3, life: 1, hue, big, grow: lerp(1.6, 2.4) * (big ? 1.3 : 1), fade: 1 / lerp(11, 45) });
+  sparks.push({ flash: true, x, y, life: 1, hue, big, size: lerp(.55, 1.2), fade: 1 / lerp(8, 24) });
+  if (sparks.length > 1600) sparks.splice(0, sparks.length - 1600);
+}
+function shapePath(shape, r) {
+  cx.beginPath();
+  switch (shape) {
+    case 'star': for (let i = 0; i < 10; i++) { const a = i / 10 * Math.PI * 2 - Math.PI / 2, rr = i % 2 ? r * .42 : r; cx[i ? 'lineTo' : 'moveTo'](Math.cos(a) * rr, Math.sin(a) * rr); } cx.closePath(); break;
+    case 'tri': for (let i = 0; i < 3; i++) { const a = i / 3 * Math.PI * 2 - Math.PI / 2; cx[i ? 'lineTo' : 'moveTo'](Math.cos(a) * r, Math.sin(a) * r); } cx.closePath(); break;
+    case 'diamond': cx.moveTo(0, -r * 1.2); cx.lineTo(r * .7, 0); cx.lineTo(0, r * 1.2); cx.lineTo(-r * .7, 0); cx.closePath(); break;
+    case 'square': cx.rect(-r * .75, -r * .75, r * 1.5, r * 1.5); break;
+    case 'heart': cx.moveTo(0, r * .9); cx.bezierCurveTo(-r * 1.4, -r * .1, -r * .6, -r * 1.2, 0, -r * .4); cx.bezierCurveTo(r * .6, -r * 1.2, r * 1.4, -r * .1, 0, r * .9); cx.closePath(); break;
+    case 'ring': cx.arc(0, 0, r, 0, Math.PI * 2); break;
+    case 'cross': cx.rect(-r, -r * .22, r * 2, r * .44); cx.rect(-r * .22, -r, r * .44, r * 2); break;
+    case 'note': cx.ellipse(-r * .3, r * .55, r * .5, r * .36, -.4, 0, Math.PI * 2); cx.rect(r * .1, -r * 1.1, r * .16, r * 1.65); break;
+    default: cx.arc(0, 0, r, 0, Math.PI * 2);
+  }
+}
+function drawSparks() {
+  for (let i = sparks.length - 1; i >= 0; i--) {
+    const k = sparks[i];
+    if (k.flash) {
+      k.life -= k.fade; if (k.life <= 0) { sparks.splice(i, 1); continue; }
+      const R = (k.big ? 46 : 32) * k.size * (1.25 - k.life * .5);
+      const g = cx.createRadialGradient(k.x, k.y, 0, k.x, k.y, R);
+      g.addColorStop(0, `hsla(${k.hue}, 100%, 90%, ${k.life * .55})`); g.addColorStop(1, 'transparent');
+      cx.fillStyle = g; cx.beginPath(); cx.arc(k.x, k.y, R, 0, Math.PI * 2); cx.fill(); continue;
+    }
+    if (k.ring) {
+      k.r += k.grow; k.life -= k.fade; if (k.life <= 0) { sparks.splice(i, 1); continue; }
+      cx.strokeStyle = `hsla(${k.hue}, 100%, 80%, ${k.life * .7})`; cx.lineWidth = 1.4;
+      cx.beginPath(); cx.arc(k.x, k.y, k.r, 0, Math.PI * 2); cx.stroke(); continue;
+    }
+    if (k.streak) {
+      k.x += k.vx; k.y += k.vy; k.vx *= k.fr; k.vy *= k.fr; k.life -= k.decay;
+      if (k.life <= 0) { sparks.splice(i, 1); continue; }
+      cx.strokeStyle = `hsla(${k.hue}, 100%, 85%, ${k.life * .8})`; cx.lineWidth = 1.2 * k.life + .3;
+      cx.beginPath(); cx.moveTo(k.x, k.y); cx.lineTo(k.x - k.vx * 3, k.y - k.vy * 3); cx.stroke(); continue;
+    }
+    k.x += k.vx; k.y += k.vy; k.vx *= k.fr; k.vy = k.vy * k.fr + k.grav; k.rot += k.vr; k.life -= k.decay;
+    if (k.life <= 0) { sparks.splice(i, 1); continue; }
+    const tw = .65 + .35 * Math.sin(k.life * 24 + k.tw), al = k.life * tw, r = k.r * (.6 + k.life * .5);
+    const cs = Math.cos(k.rot), sn = Math.sin(k.rot); cx.setTransform(DPR * cs, DPR * sn, -DPR * sn, DPR * cs, DPR * k.x, DPR * k.y);
+    if (k.shape === 'dot') {
+      cx.fillStyle = `hsla(${k.hue}, 100%, 70%, ${al * .25})`; cx.beginPath(); cx.arc(0, 0, r * 3, 0, Math.PI * 2); cx.fill();
+      cx.fillStyle = `hsla(${k.hue}, 100%, 90%, ${al})`; cx.beginPath(); cx.arc(0, 0, r, 0, Math.PI * 2); cx.fill();
+    } else {
+      shapePath(k.shape, r);
+      if (k.shape === 'ring') { cx.strokeStyle = `hsla(${k.hue}, 100%, 80%, ${al})`; cx.lineWidth = 1.2; cx.stroke(); }
+      else { cx.fillStyle = `hsla(${k.hue}, 100%, 75%, ${al * .85})`; cx.fill(); }
+    }
+    cx.setTransform(DPR, 0, 0, DPR, 0, 0);
+  }
+}
+/* 螺旋: the same lines in 3D. Each instrument winds around its own pitch like a corkscrew,
+   and the whole stream is turned so the past goes away into the depth. */
+function drawSpiral() {
+  const m = song, now = songNow(), span = 5, mel = m.parts.filter(p => !p.drums), drum = m.parts.find(p => p.drums);
+  const top = H * .14, bot = drum ? H * .76 : H * .8;
+  let lo = 127, hi = 0; for (const p of mel) { lo = Math.min(lo, p.lo); hi = Math.max(hi, p.hi); }
+  if (hi - lo < 24) { const c = (hi + lo) / 2; lo = c - 12; hi = c + 12; }
+  const yOf = n => bot - (n - lo) / (hi - lo) * (bot - top);
+  const R = Math.min(18, Math.max(8, (bot - top) / (hi - lo) * 2.5));       // radius of the spiral
+  const turns = .28;                                                           // turns per second
+  // camera: the time axis is turned away from the viewer (gently swaying)
+  const yaw = .32 + Math.sin(performance.now() / 5200) * .06, ca = Math.cos(yaw), sa = Math.sin(yaw), D = Math.max(W, H) * 1.05;
+  const len = W * 1.15;                                                       // world length of the time axis
+  const raw = (t, y, z) => {                                                  // world -> screen before fitting
+    const X = (t - now) / span * len + len / 2, Y = y - H / 2;
+    const x2 = X * ca + z * sa, z2 = -X * sa + z * ca, k = D / (D + z2);
+    return [x2 * k, Y * k, k];
+  };
+  const L0 = raw(now - span, H / 2, 0), R0 = raw(now, H / 2, 0);
+  const headX = Math.round(W * .7), fit = (headX - 12) / (R0[0] - L0[0]), ox = 12 - L0[0] * fit;
+  // fit the picture to the screen height: find how far up/down the highest and lowest notes can reach
+  // (nearest and farthest line, both ends of the time axis, the spiral's radius), then scale that into the band
+  let yMin = 1e9, yMax = -1e9;
+  for (const t of [now - span, now]) for (const z of [-W * .3 - R, W * .3 + R]) for (const y of [top - R, bot + R]) {
+    const r = raw(t, y, z)[1]; yMin = Math.min(yMin, r); yMax = Math.max(yMax, r);
+  }
+  const bandTop = H * .1, bandBot = H * .82, fitY = (bandBot - bandTop) / (yMax - yMin), oy = bandTop - yMin * fitY;
+  const P3 = (t, y, z) => { const r = raw(t, y, z); return [r[0] * fit + ox, r[1] * fitY + oy, r[2]]; };
+  if (now < lastNow - .5) lastNow = now - .02;
+  const LEAD = .03;                                                            // light up a hair early: the eye is slower than the ear
+  const crossed = t => t - LEAD > lastNow && t - LEAD <= now, STEPS = 90, dt = span / STEPS;
+  const heads = [], t0 = now - span;
+  const all = []; mel.forEach(p => p.lines.forEach((L, li) => all.push([p, L, li])));
+  cx.lineJoin = cx.lineCap = 'round';
+  all.forEach(([p, G, li], pi) => {
+    if (!G.length) return;
+    const phase = pi / all.length * Math.PI * 2, hue = G.hue, dz = (G.z || 0) * W * .55;
+    let a = 0, b = G.length;
+    while (a < b) { const mid = (a + b) >> 1; if (G[mid].s <= t0) a = mid + 1; else b = mid; }
+    const j0 = Math.max(0, a - 1);
+    // sample times: an even grid for the curve, plus every note start and end so short notes are never skipped
+    const ts = []; for (let i = 0; i <= STEPS; i++) ts.push(t0 + i * dt);
+    for (let j = j0; j < G.length && G[j].s <= now; j++) {
+      const g = G[j], e = Math.min(.03, (g.e - g.s) * .4);
+      if (g.s > t0) ts.push(g.s, Math.min(now, g.s + e));
+      if (g.e > t0 && g.e < now) ts.push(g.e, Math.min(now, g.e + .03));
+    }
+    ts.sort((x, y) => x - y);
+    let j = j0, prevPt = null, prevT = -1e9;
+    for (const t of ts) {
+      if (t - prevT < .002) continue; prevT = t;
+      while (j + 1 < G.length && G[j + 1].s <= t) j++;
+      const g = G[j]; if (g.s > t) { prevPt = null; continue; }
+      const pg = j > 0 ? G[j - 1] : null, e = Math.min(.03, (g.e - g.s) * .4);
+      let n = g.n;
+      if (pg && t - g.s < e) { const u = (t - g.s) / e; n = pg.n + (g.n - pg.n) * u * u * (3 - 2 * u); }
+      const rest = t > g.e + .02;
+      const th = t * turns * Math.PI * 2 + phase;
+      const pt = P3(t, yOf(n) + Math.sin(th) * R, dz + Math.cos(th) * R);
+      const front = (1 - Math.cos(th)) / 2;
+      if (prevPt) {
+        const age = (now - t) / span, w0 = (1.4 + g.v * 1.2) * (g.motif && !rest ? 4.2 : 1) * pt[2] * fit;
+        const al = (rest ? .22 : (g.motif ? .95 : .8)) * (.22 + .78 * front) * (1 - age * .5);
+        cx.strokeStyle = `hsla(${hue}, 95%, ${(g.motif ? 74 : 62) + front * 12}%, ${al})`;
+        cx.lineWidth = rest ? 1.3 * pt[2] * fit : w0 * (.7 + front);
+        cx.beginPath(); cx.moveTo(prevPt[0], prevPt[1]); cx.lineTo(pt[0], pt[1]); cx.stroke();
+        if (g.motif && !rest && front > .5) {
+          cx.strokeStyle = `hsla(${hue}, 95%, 60%, ${al * .2})`; cx.lineWidth = w0 * 3.4; cx.stroke();
+        }
+      }
+      prevPt = pt;
+    }
+    // the head ("now") and the light burst when this line moves to a new note
+    const jn = (() => { let x = j0; while (x + 1 < G.length && G[x + 1].s - LEAD <= now) x++; return x; })();
+    const g = G[jn];
+    if (g && g.s - LEAD <= now && prevPt) {
+      const th = now * turns * Math.PI * 2 + phase, hp = P3(now, yOf(g.n) + Math.sin(th) * R, dz + Math.cos(th) * R);
+      heads.push([prevPt[0], prevPt[1], hue, g.motif ? 12 : 5, g.e >= now]);
+      for (let x = jn; x >= j0 && x >= jn - 3; x--) {                    // every note start passed since the last frame
+        const gx = G[x], px = x > 0 ? G[x - 1] : null;
+        if (crossed(gx.s) && (!px || px.n !== gx.n || gx.s - px.e > .05))
+          sparkle(hp[0], P3(now, yOf(gx.n) + Math.sin(th) * R, dz + Math.cos(th) * R)[1], hue, gx.motif, px ? Math.sign(gx.n - px.n) : 0, gx.note.e - gx.note.s);
+      }
+    }
+  });
+  lastNow = now;
+  for (const [x, y, hue, r, on] of heads) {
+    if (!on) continue;
+    const g = cx.createRadialGradient(x, y, 0, x, y, r * 2.2);
+    g.addColorStop(0, `hsla(${hue}, 100%, 88%, .9)`); g.addColorStop(1, 'transparent');
+    cx.fillStyle = g; cx.beginPath(); cx.arc(x, y, r * 2.2, 0, Math.PI * 2); cx.fill();
+  }
+  drawSparks();
+  if (drum) {
+    const yb = H * .84, N = drum.notes; let a = 0, b = N.length;
+    while (a < b) { const mid = (a + b) >> 1; if (N[mid].s < now - span) a = mid + 1; else b = mid; }
+    for (let i = a; i < N.length && N[i].s <= now; i++) {
+      const n = N[i], k = n.n, low = k <= 36, cym = k === 42 || k === 44 || k === 46 || k >= 49;
+      const q = P3(n.s, yb + (low ? 6 : cym ? -6 : 0), 0);
+      cx.fillStyle = `hsla(${drum.hue}, 90%, ${low ? 55 : cym ? 80 : 68}%, ${.35 + .5 * n.v})`;
+      cx.beginPath(); cx.arc(q[0], q[1], (low ? 2.6 : 1.6) * q[2], 0, Math.PI * 2); cx.fill();
+    }
+  }
+}
+
+wake();
+requestAnimationFrame(frame);
+})();
+</script>
+</body>
+</html>
