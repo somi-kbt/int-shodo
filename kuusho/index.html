@@ -2,9 +2,9 @@
 <html lang="ja">
 <head>
 <meta charset="utf-8">
-<meta name="version" content="1.0">
+<meta name="version" content="1.1">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>kuusho 空書 – 体で書道 v1.0</title>
+<title>kuusho 空書 – 体で書道 v1.1</title>
 <style>
   :root { --bg:#0e0d0c; --panel:rgba(22,20,18,.84); --fg:#efe9df; --mute:#9a9286; --acc:#d63a24; }
   * { box-sizing:border-box; }
@@ -53,7 +53,7 @@
 <div id="start">
   <h1>空書<small>KUUSHO</small></h1>
   <p class="how">五本の指先がふちになる、丸い筆。<br>指を広げると太く、すぼめると細く。<br>速く払えばかすれ、ゆっくり留めればにじむ。<br>グーにすると筆が上がる。<br>十五秒で書き、書いた線を立体で眺める。</p>
-  <p>映像は端末の中だけで処理され、どこにも送信されません。</p>
+  <p>スマホでも、PCのWebカメラでも書けます（PCはスペースキーでも書き始められます）。<br>映像は端末の中だけで処理され、どこにも送信されません。</p>
   <button class="primary" id="go">筆をとる</button>
   <p id="err" class="ui" style="color:#fca5a5"></p>
 </div>
@@ -64,6 +64,7 @@
 <div id="status" class="ui hidden">読み込み中…</div>
 <div id="timer" class="hidden"></div>
 <div id="hint" class="ui hidden">ドラッグで回転・ピンチで拡大</div>
+<script>if (matchMedia("(pointer: fine)").matches) document.getElementById("hint").textContent = "ドラッグで回転・ホイールで拡大";</script>
 
 <div id="barCam" class="bar ui hidden">
   <select id="ink" title="墨の色">
@@ -144,6 +145,14 @@ async function startCamera() {
   await video.play();
   cv.width = ink.width = video.videoWidth; cv.height = ink.height = video.videoHeight;
   lastVideoTime = -1;
+  updateFlip();
+}
+// PC usually has one webcam: hide the camera-switch button when there is nothing to switch to
+async function updateFlip() {
+  try {
+    const cams = (await navigator.mediaDevices.enumerateDevices()).filter(d => d.kind === "videoinput");
+    $("flip").classList.toggle("hidden", cams.length < 2);
+  } catch {}
 }
 function stopCamera() { if (stream) stream.getTracks().forEach(t => t.stop()); stream = null; }
 
@@ -180,6 +189,10 @@ $("flip").onclick = async () => {
   facing = facing === "user" ? "environment" : "user";
   try { await startCamera(); } catch { facing = facing === "user" ? "environment" : "user"; await startCamera(); }
 };
+// PC: space or Enter starts writing, so both hands can stay up in front of the camera
+addEventListener("keydown", e => {
+  if ((e.key === " " || e.key === "Enter") && mode === "ready" && !e.target.closest?.("input,select,textarea,button")) { e.preventDefault(); $("rec").click(); }
+});
 $("rec").onclick = () => {
   ictx.clearRect(0, 0, ink.width, ink.height);
   live.clear(); strokes = [];

@@ -8,3 +8,6 @@ https://www.somikubota.jp/chromasound/
 - `api/songs.js` … 曲の一覧・MIDIファイルの受け渡し（Vercel Blob）
 
 Vercel のプロジェクト `chromasound` から公開しています。
+
+## PCで使う
+- スペースキーで再生・一時停止できる

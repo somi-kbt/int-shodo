@@ -2,9 +2,9 @@
 <html lang="ja">
 <head>
 <meta charset="utf-8">
-<meta name="version" content="1.0">
+<meta name="version" content="1.1">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>gassho 合書 – ふたりで書いて、ふたりで鳴らす v1.0</title>
+<title>gassho 合書 – ふたりで書いて、ふたりで鳴らす v1.1</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=M+PLUS+Rounded+1c:wght@500;800&display=swap" rel="stylesheet">
@@ -82,7 +82,7 @@
   <button class="go" id="host">部屋をつくる</button>
   <div class="label">または、相手の部屋番号を入れる</div>
   <div class="row"><input id="code" inputmode="numeric" maxlength="4" placeholder="0000"><button id="join">部屋に入る</button></div>
-  <p>🔊 音が出ます（マナーモードでも鳴ります）。カメラの映像は送信しません。<br>相手に送るのは、筆の位置・太さ・色だけです。</p>
+  <p>スマホでも、PCのWebカメラでもあそべます（PCはスペースキーでも書きはじめられます）。<br>🔊 音が出ます（マナーモードでも鳴ります）。カメラの映像は送信しません。<br>相手に送るのは、筆の位置・太さ・色だけです。</p>
   <p id="err" style="color:#ff9cc8"></p>
 </div>
 
@@ -438,6 +438,14 @@ async function startCamera() {
   await video.play();
   cv.width = ink.width = video.videoWidth; cv.height = ink.height = video.videoHeight;
   lastVideoTime = -1;
+  updateFlip();
+}
+// PC usually has one webcam: hide the camera-switch button when there is nothing to switch to
+async function updateFlip() {
+  try {
+    const cams = (await navigator.mediaDevices.enumerateDevices()).filter(d => d.kind === "videoinput");
+    $("flip").classList.toggle("hidden", cams.length < 2);
+  } catch {}
 }
 function stopCamera() { if (stream) stream.getTracks().forEach(t => t.stop()); stream = null; }
 
@@ -492,6 +500,10 @@ function beginCount(fromRemote) {
   setMode("count");
   if (!fromRemote) send({ t: "start" });
 }
+// PC: space or Enter starts writing, so both hands can stay up in front of the camera
+addEventListener("keydown", e => {
+  if ((e.key === " " || e.key === "Enter") && mode === "ready" && !e.target.closest?.("input,select,textarea,button")) { e.preventDefault(); $("rec").click(); }
+});
 $("rec").onclick = () => beginCount(false);
 async function backToCamera() {
   clearScene();

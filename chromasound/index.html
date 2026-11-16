@@ -2,10 +2,10 @@
 <html lang="ja">
 <head>
 <meta charset="utf-8">
-<meta name="version" content="1.0">
+<meta name="version" content="1.1">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="theme-color" content="#07060b">
-<title>chromasound by somi kubota — 音楽を、光と軌跡に v1.0</title>
+<title>chromasound by somi kubota — 音楽を、光と軌跡に v1.1</title>
 <style>
   :root { --ui: rgba(255,255,255,.9); --glass: rgba(20,18,30,.55); --line: rgba(255,255,255,.18); }
   * { box-sizing: border-box; margin: 0; padding: 0; -webkit-tap-highlight-color: transparent; }
@@ -105,7 +105,7 @@
       <label class="btn addbtn" for="file">＋ MIDIファイルを追加（複数選べます）</label>
       <input type="file" id="file" multiple accept=".mid,.midi,audio/midi,audio/x-midi,audio/mid">
       <p class="note">登録した曲はサーバーに保存され、このサイトを開いた全員の一覧に並びます（最大20曲）。<br>
-        曲名はタップして書き換えられます。</p>
+        曲名はタップ（PCではクリック）して書き換えられます。</p>
       <div class="count" id="count"></div>
       <ul class="songs" id="songs"></ul>
     </div>
@@ -454,7 +454,7 @@ async function prepare(m) {
   if (song !== m) return;
   $('toast').classList.add('hide');
   player.src = url; player.currentTime = 0; m.ready = true;
-  if (!userPaused) player.play().catch(() => toast('画面をタップすると音が出ます', 5000));
+  if (!userPaused) player.play().catch(() => toast((matchMedia('(pointer: fine)').matches ? '画面をクリック' : '画面をタップ') + 'すると音が出ます', 5000));
 }
 function stopSong() {
   if (!song) return;
@@ -642,6 +642,10 @@ function wake() {
   idle = setTimeout(() => { if (song && $('panel').classList.contains('off')) ['bar', 'top'].forEach(id => $(id).classList.add('hide')); }, 4000);
 }
 ['pointerdown', 'pointermove'].forEach(ev => addEventListener(ev, wake));
+// PC: space bar plays / pauses
+addEventListener('keydown', e => {
+  if (e.key === ' ' && !e.target.closest?.('input,textarea,select,button') && $('panel').classList.contains('off')) { e.preventDefault(); wake(); $('pause').onclick(); }
+});
 
 /* ================= drawing ================= */
 function frame() {
