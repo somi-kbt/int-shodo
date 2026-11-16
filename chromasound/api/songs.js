@@ -60,16 +60,21 @@ export default async function handler(req, res) {
   try {
     if (req.method === 'GET') {
       if (q.id) {
-        const [b] = blobsFor(await midiBlobs(), String(q.id));
-        if (!b) return res.status(404).json({ error: '曲が見つかりません' });
-        const r = await fetch(b.url, { cache: 'no-store' });
+        const id = String(q.id);
+        const { songs } = await readIndex();
+        const s = songs.find(x => x.id === id);
+        let url = s && s.url;
+        if (!url) { const [b] = blobsFor(await midiBlobs(), id); url = b && b.url; }
+        if (!s || !url) return res.status(404).json({ error: '曲が見つかりません' });
+        const r = await fetch(url, { cache: 'no-store' });
         if (!r.ok) return res.status(502).json({ error: '曲を取得できませんでした' });
         res.setHeader('Content-Type', 'audio/midi');
         res.setHeader('Cache-Control', 'public, max-age=86400, immutable');
         return res.status(200).send(Buffer.from(await r.arrayBuffer()));
       }
       const { songs } = await readIndex();
-      return res.status(200).json({ songs, max: MAX_SONGS });
+      // the storage address stays on the server
+      return res.status(200).json({ songs: songs.map(({ url, ...rest }) => rest), max: MAX_SONGS });
     }
 
     if (!authed(req)) return res.status(401).json({ error: 'パスワードが違います' });
@@ -85,9 +90,10 @@ export default async function handler(req, res) {
       const { songs, urls } = await readIndex();
       if (songs.length >= MAX_SONGS) return res.status(409).json({ error: `登録できるのは${MAX_SONGS}曲までです` });
       const id = newId();
-      await put(`songs/${id}.mid`, data, { access: 'public', addRandomSuffix: false, contentType: 'audio/midi' });
+      const blob = await put(`midi/${id}.mid`, data, { access: 'public', addRandomSuffix: true, contentType: 'audio/midi' });
       const song = {
         id,
+        url: blob.url,
         name: String(body.name || body.file || '無題').slice(0, 80),
         file: String(body.file || '').slice(0, 120),
         parts: Number(body.parts) || 0,
@@ -95,7 +101,8 @@ export default async function handler(req, res) {
         added: Date.now(),
       };
       await writeIndex([...songs, song], urls);
-      return res.status(200).json({ song });
+      const { url, ...pub } = song;
+      return res.status(200).json({ song: pub });
     }
 
     if (req.method === 'PATCH') {
@@ -107,17 +114,20 @@ export default async function handler(req, res) {
       if (!s) return res.status(404).json({ error: '曲が見つかりません' });
       s.name = name;
       await writeIndex(songs, urls);
-      return res.status(200).json({ song: s });
+      const { url, ...pub } = s;
+      return res.status(200).json({ song: pub });
     }
 
     if (req.method === 'DELETE') {
       const id = String(q.id || '');
       if (!id) return res.status(400).json({ error: 'idがありません' });
       const { songs, urls } = await readIndex();
+      const gone = songs.find(x => x.id === id);
       const rest = songs.filter(x => x.id !== id);
       if (rest.length === songs.length) return res.status(404).json({ error: '曲が見つかりません' });
       await writeIndex(rest, urls);
       const files = blobsFor(await midiBlobs(), id).map(b => b.url);
+      if (gone && gone.url && !files.includes(gone.url)) files.push(gone.url);
       if (files.length) await del(files).catch(() => {});
       return res.status(200).json({ ok: true });
     }
