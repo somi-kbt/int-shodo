@@ -197,8 +197,21 @@ document.querySelectorAll('[data-k]').forEach(b => b.onclick = () => {
 });
 document.getElementById('wet').oninput = e => { wet = +e.target.value; document.getElementById('wetv').textContent = wet; };
 document.getElementById('clr').onclick = () => { reset(); };
+// Save: on phones/tablets open the share sheet ("画像を保存" puts it in Photos); elsewhere download the PNG.
+function download(blob) {
+  const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = 'jiwarigaki.png'; a.click();
+  setTimeout(() => URL.revokeObjectURL(a.href), 4000);
+}
 document.getElementById('save').onclick = () => {
-  cv.toBlob(b => { const a = document.createElement('a'); a.href = URL.createObjectURL(b); a.download = 'jiwarigaki.png'; a.click(); setTimeout(() => URL.revokeObjectURL(a.href), 4000); }, 'image/png');
+  // build the file synchronously so the share sheet still counts as part of the tap (Safari is strict about this)
+  const bin = atob(cv.toDataURL('image/png').split(',')[1]), u8 = new Uint8Array(bin.length);
+  for (let i = 0; i < bin.length; i++) u8[i] = bin.charCodeAt(i);
+  const blob = new Blob([u8], { type: 'image/png' });
+  const mobile = matchMedia('(pointer: coarse)').matches || navigator.maxTouchPoints > 1;
+  const file = new File([blob], 'jiwarigaki.png', { type: 'image/png' });
+  if (mobile && navigator.canShare && navigator.canShare({ files: [file] })) {
+    navigator.share({ files: [file], title: 'じわり書き' }).catch(e => { if (e.name !== 'AbortError') download(blob); });
+  } else download(blob);
 };
 
 function stroke(pts, k, done) {
@@ -213,12 +226,12 @@ function stroke(pts, k, done) {
     const a = P2(pts[i]), b = P2(pts[i + 1]); t += 0.08; const u = Math.min(t, 1);
     lineTo(L, a[0] + (b[0] - a[0]) * u, a[1] + (b[1] - a[1]) * u);
     if (t >= 1) { t = 0; i++; if (pts[i][2]) pause = pts[i][2]; }
-  }, 24);
+  }, 8);                                          // demo runs 3x faster than it used to (was 24ms per step)
 }
 function intro() {
   setTimeout(() => stroke([[0.2,0.3,8],[0.32,0.26],[0.48,0.27],[0.62,0.31],[0.74,0.3,14]], 0, () =>
     stroke([[0.46,0.4,6],[0.47,0.52],[0.45,0.64],[0.4,0.74],[0.32,0.8,12]], 0, () =>
-      stroke([[0.6,0.56,5],[0.68,0.64],[0.78,0.72,10]], 0))), 600);
+      stroke([[0.6,0.56,5],[0.68,0.64],[0.78,0.72,10]], 0))), 200);
 }
 window.addEventListener('resize', () => { if (Math.abs(window.innerWidth - lastW) > 40) reset(); });
 
