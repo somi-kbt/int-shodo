@@ -2,10 +2,10 @@
 <html lang="ja">
 <head>
 <meta charset="utf-8">
-<meta name="version" content="0.2">
+<meta name="version" content="0.3">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="theme-color" content="#f3ede1">
-<title>chirashi 散らし – 短歌を万葉がなで散らし書きに v0.2</title>
+<title>chirashi 散らし – 短歌を万葉がなで散らし書きに v0.3</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Yuji+Syuku&family=Yuji+Boku&family=Yuji+Mai&family=Shippori+Mincho:wght@500&family=Noto+Serif+Hentaigana:wght@700&display=swap" rel="stylesheet">
@@ -51,7 +51,7 @@
 </head>
 <body>
 <main>
-  <header><h1>散らし<small>CHIRASHI</small></h1><span class="ver">v0.2</span></header>
+  <header><h1>散らし<small>CHIRASHI</small></h1><span class="ver">v0.3</span></header>
   <p class="lead">短歌を書くと、ひらがなを変体仮名や万葉がなに置き換えて、色紙や短冊に散らし書きします。漢字はそのまま残ります。</p>
 
   <textarea id="src" spellcheck="false">秋の田の かりほの庵の 苫をあらみ わが衣手は 露にぬれつつ</textarea>
@@ -63,6 +63,7 @@
   <div class="ctl"><span class="lab">かな</span><div class="seg" id="kana"></div></div>
   <div class="ctl"><span class="lab">字母</span><div class="seg" id="mode"></div></div>
   <div class="ctl"><span class="lab">字形</span><div class="seg" id="warp"></div></div>
+  <div class="ctl"><span class="lab">連綿</span><div class="seg" id="ren"></div></div>
 
   <div class="stage"><canvas id="cv"></canvas></div>
   <div class="actions">
@@ -144,6 +145,11 @@ const KANAS = [
   { name:'変体仮名', id:'hentai' },
   { name:'万葉がな', id:'kanji' },
 ];
+const RENS = [
+  { name:'なし', p:0 },
+  { name:'少し', p:.6 },
+  { name:'多め', p:1 },
+];
 const MODES = [
   { name:'変化をつける', id:'vary' },
   { name:'基本の字母',   id:'base' },
@@ -159,6 +165,7 @@ const st = {
   mode: store.get('mode', 'vary'),
   kana: store.get('kana', 'hentai'),
   warp: +store.get('warp', 1),
+  ren: +store.get('ren', 1),
   seed: 7,
   pick: {},            // 何字目の字母を手で選んだか { index: 候補番号 }
 };
@@ -268,6 +275,21 @@ function drawGlyph(ch, x, y, fs, font, rot, sh) {
   gx.textAlign = 'center'; gx.textBaseline = 'middle';
   gx.fillStyle = '#1d1915'; gx.font = font;
   gx.fillText(ch, S / 2, S / 2);
+  // 墨のいちばん上（書き始め）といちばん下（書き終わり）を探す
+  const px = gx.getImageData(0, 0, S, S).data;
+  let top = -1, bot = -1;
+  for (let yy = 0; yy < S && top < 0; yy++) for (let xx = 0; xx < S; xx++) if (px[(yy * S + xx) * 4 + 3] > 120) { top = yy; break; }
+  for (let yy = S - 1; yy >= 0 && bot < 0; yy--) for (let xx = 0; xx < S; xx++) if (px[(yy * S + xx) * 4 + 3] > 120) { bot = yy; break; }
+  const band = (y0, y1) => { let sx = 0, n = 0;
+    for (let yy = Math.max(0, y0); yy <= Math.min(S - 1, y1); yy++) for (let xx = 0; xx < S; xx++) if (px[(yy * S + xx) * 4 + 3] > 120) { sx += xx; n++; }
+    return n ? sx / n : S / 2; };
+  const toPage = (gxp, gyp) => {
+    const lx = (gxp - S / 2) * sh.w(gyp / S), ly = gyp - S / 2;
+    const X = sh.sx * lx + sh.skew * ly, Y = sh.sy * ly;
+    return { x: x + X * Math.cos(rot) - Y * Math.sin(rot), y: y + X * Math.sin(rot) + Y * Math.cos(rot) };
+  };
+  const bd = Math.max(2, S * .06);
+  const anchors = top < 0 ? null : { top: toPage(band(top, top + bd), top), bot: toPage(band(bot - bd, bot), bot) };
   cx.save();
   cx.translate(x, y); cx.rotate(rot);
   cx.transform(sh.sx, 0, sh.skew, sh.sy, 0, 0);
@@ -275,6 +297,28 @@ function drawGlyph(ch, x, y, fs, font, rot, sh) {
   for (let i = 0; i < N; i++) {               // 横に細く切り、幅を変えながら貼る
     const ww = S * sh.w((i + .5) / N);
     cx.drawImage(glyph, 0, i * h, S, h, -ww / 2, -S / 2 + i * h, ww, h + .6);
+  }
+  cx.restore();
+  return anchors;
+}
+
+// 連綿の線：前の字の書き終わり A から、次の字の書き始め B へ、細く揺れる線で結ぶ
+function drawRenmen(A, B, fs, rr) {
+  const d = B.y - A.y;
+  if (d < fs * .04 || d > fs * 1.1) return;
+  const side = (rr() < .5 ? -1 : 1) * fs * (.12 + rr() * .18);
+  const c1 = { x: A.x + side, y: A.y + d * .45 }, c2 = { x: B.x - side * .6, y: B.y - d * .5 };
+  const pt = t => { const u = 1 - t;
+    return { x: u*u*u*A.x + 3*u*u*t*c1.x + 3*u*t*t*c2.x + t*t*t*B.x, y: u*u*u*A.y + 3*u*u*t*c1.y + 3*u*t*t*c2.y + t*t*t*B.y }; };
+  const N = 22, w0 = fs * .05, wm = fs * .016, w1 = fs * .035;
+  cx.save(); cx.strokeStyle = '#1d1915'; cx.lineCap = 'round';
+  let p = pt(0);
+  for (let i = 1; i <= N; i++) {
+    const t = i / N, q = pt(t);
+    cx.lineWidth = t < .5 ? w0 + (wm - w0) * (t / .5) : wm + (w1 - wm) * ((t - .5) / .5);
+    cx.globalAlpha = .82 + .18 * Math.abs(1 - 2 * t);       // 中ほどは少しかすれる
+    cx.beginPath(); cx.moveTo(p.x, p.y); cx.lineTo(q.x, q.y); cx.stroke();
+    p = q;
   }
   cx.restore();
 }
@@ -330,7 +374,8 @@ async function draw() {
   base = Math.min(base, (P.w - marginX * 2) / (cols.length * colGap));
   base = Math.min(base, P.w * .22) * (1 - .1 * WARPS[st.warp].k);
 
-  const r = rng(st.seed), rs = rng(st.seed * 7 + 3);
+  const r = rng(st.seed), rs = rng(st.seed * 7 + 3), rr = rng(st.seed * 13 + 5);
+  const renP = RENS[st.ren].p;
   const totalW = cols.length * base * colGap;
   const x0 = P.w / 2 + totalW / 2 - base * colGap / 2;    // いちばん右の行の中心
 
@@ -340,15 +385,26 @@ async function draw() {
     const s = spec[k].s, size = base * s;
     let x = x0 - k * base * colGap + (r() - .5) * base * .25;
     let y = P.h * spec[k].top + (r() - .5) * P.h * .025;
+    let prev = null, chain = 0;
     col.forEach(c => {
+      // 前の字とつなげるか（かな同士はつながりやすく、漢字はつながりにくい）
+      let link = false;
+      if (prev && renP && !c.br && chain < 4) {
+        const base = prev.kana && c.kana ? .8 : prev.kana || c.kana ? .35 : .08;
+        link = rr() < base * renP;
+      }
+      chain = link ? chain + 1 : 0;
       const fs = size * (c.kana ? .95 : 1.12) * (1 + (r() - .5) * .14);
       const dx = (r() - .5) * size * .14;
       const rot = (r() - .5) * .07;
       const sh = pickShape(rs, WARPS[st.warp].k, !!c.kana);
-      const hh = size * adv(c) * (1 + (sh.sy - 1) * .6) * (1 + (r() - .5) * .08);
+      let hh = size * adv(c) * (1 + (sh.sy - 1) * .6) * (1 + (r() - .5) * .08);
+      if (link) { y -= size * .1; hh *= .9; }          // つなげる字は間を詰める
       y += hh / 2;
       const font = isHentai(c.ch) ? `700 ${fs * .92}px "Noto Serif Hentaigana", serif` : `${fs}px "${F.css}", "Yuji Syuku", serif`;
-      drawGlyph(c.ch, x + dx, y, fs, font, rot, sh);
+      const an = drawGlyph(c.ch, x + dx, y, fs, font, rot, sh);
+      if (link && prev && prev.an && an) drawRenmen(prev.an.bot, an.top, Math.min(fs, prev.fs), rr);
+      prev = { an, fs, kana: c.kana };
       hits.push({ x: x + dx, y, r: fs * .55, idx: c.idx, kana: c.kana, ch: c.ch, jibo: c.jibo });
       y += hh / 2;
       x += (r() - .5) * size * .05;     // 行がわずかに揺れる
@@ -415,6 +471,7 @@ function renderControls() {
   buttons($('font'), FONTS, (it, i) => i === st.font, (it, i) => { st.font = i; store.set('font', i); });
   buttons($('warp'), WARPS, (it, i) => i === st.warp, (it, i) => { st.warp = i; store.set('warp', i); });
   buttons($('kana'), KANAS, it => it.id === st.kana, it => { st.kana = it.id; st.pick = {}; store.set('kana', it.id); });
+  buttons($('ren'), RENS, (it, i) => i === st.ren, (it, i) => { st.ren = i; store.set('ren', i); });
   buttons($('mode'), MODES, it => it.id === st.mode, it => { st.mode = it.id; st.pick = {}; store.set('mode', it.id); });
 }
 
