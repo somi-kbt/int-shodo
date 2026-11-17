@@ -1,0 +1,206 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>いまのことば</title>
+<meta name="description" content="いまの気持ちを書くと、禅語か和歌がひとつ届く。一期一会のことば。">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Shippori+Mincho:wght@400;600&family=Zen+Kaku+Gothic+New:wght@400;500&family=Cormorant+Garamond:ital@1&display=swap" rel="stylesheet">
+<style>
+:root{--paper:#fbfaf7;--ink:#2a2724;--sub:#6f6a64;--line:#e6e1d9;--card:#ffffff}
+*{box-sizing:border-box}
+html,body{margin:0;background:var(--paper);color:var(--ink);font-family:"Zen Kaku Gothic New",sans-serif;-webkit-font-smoothing:antialiased}
+main{max-width:520px;margin:0 auto;padding:48px 22px 64px}
+header{text-align:center;margin-bottom:32px}
+h1{font-family:"Shippori Mincho",serif;font-weight:400;font-size:22px;letter-spacing:.3em;margin:0 0 8px}
+.lead{font-size:13px;color:var(--sub);letter-spacing:.08em;margin:0}
+form{display:flex;flex-direction:column;gap:12px}
+textarea{width:100%;min-height:96px;resize:vertical;border:1px solid var(--line);background:var(--card);border-radius:14px;padding:14px 16px;font:inherit;font-size:16px;line-height:1.7;color:var(--ink);outline:none;transition:border-color .2s}
+textarea:focus{border-color:#b9b0a4}
+textarea::placeholder{color:#b3ada6}
+.err{font-size:13px;color:#a8433a;min-height:1em;margin:0}
+button{font:inherit;cursor:pointer}
+.go{align-self:center;border:1px solid var(--ink);background:transparent;color:var(--ink);padding:10px 34px;border-radius:999px;font-size:15px;letter-spacing:.2em;transition:background .2s,color .2s}
+.go:hover{background:var(--ink);color:var(--paper)}
+.go:disabled{opacity:.5;cursor:default}
+.stage{margin-top:40px;min-height:40px}
+.card{position:relative;overflow:hidden;background:var(--card);border-radius:20px;border:1px solid var(--line);padding:44px 28px 30px;opacity:0;transform:translateY(8px);transition:opacity 1.4s ease,transform 1.4s ease}
+.card.show{opacity:1;transform:none}
+.wash{position:absolute;inset:-20%;width:140%;height:140%;pointer-events:none;opacity:0;transition:opacity 2.4s ease .2s}
+.card.show .wash{opacity:1}
+.body{position:relative}
+.kind{font-size:11px;letter-spacing:.3em;color:var(--sub);text-align:center;margin:0 0 22px}
+.phrase{font-family:"Shippori Mincho",serif;font-weight:600;font-size:30px;line-height:1.6;text-align:center;letter-spacing:.12em;margin:0 0 10px;white-space:pre-line}
+.phrase.waka{font-size:21px;font-weight:400;letter-spacing:.08em;line-height:1.9}
+.reading{text-align:center;font-size:13px;color:var(--sub);letter-spacing:.12em;margin:0 0 6px;white-space:pre-line;line-height:1.8}
+.source{text-align:center;font-size:12px;color:var(--sub);margin:0 0 26px}
+hr{border:0;border-top:1px solid var(--line);width:40px;margin:0 auto 24px}
+.meaning{font-size:15px;line-height:1.9;margin:0 0 18px}
+.english{font-family:"Cormorant Garamond",serif;font-style:italic;font-size:19px;line-height:1.55;color:#4a4540;margin:0 0 24px}
+.why{font-size:13px;line-height:1.9;color:var(--sub);background:rgba(255,255,255,.6);border-radius:12px;padding:12px 14px;margin:0}
+.why b{font-weight:500;color:var(--ink);display:block;font-size:11px;letter-spacing:.2em;margin-bottom:4px}
+.once{text-align:center;font-size:11px;color:#a59e96;letter-spacing:.2em;margin:22px 0 0}
+.waiting{text-align:center;color:var(--sub);font-size:14px;letter-spacing:.2em;font-family:"Shippori Mincho",serif}
+.waiting span{display:inline-block;animation:breathe 2.4s ease-in-out infinite}
+@keyframes breathe{0%,100%{opacity:.25}50%{opacity:1}}
+.again{display:block;margin:22px auto 0;background:none;border:0;color:var(--sub);font-size:13px;letter-spacing:.15em;text-decoration:underline;text-underline-offset:4px}
+.unavail{text-align:center;font-size:13px;color:var(--sub);line-height:1.8}
+</style>
+</head>
+<body>
+<main>
+  <header>
+    <h1>いまのことば</h1>
+    <p class="lead">いまの気持ちを、そのまま書いてください</p>
+  </header>
+  <form id="f" novalidate>
+    <textarea id="mood" placeholder="なんとなく、そわそわして落ち着かない" aria-label="いまの気持ち"></textarea>
+    <p class="err" id="err" role="alert"></p>
+    <button class="go" id="go" type="submit">ことばを聞く</button>
+  </form>
+  <section class="stage" id="stage" aria-live="polite"></section>
+</main>
+
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <filter id="wc" x="-20%" y="-20%" width="140%" height="140%">
+    <feTurbulence type="fractalNoise" baseFrequency="0.012" numOctaves="3" seed="3" result="n"/>
+    <feDisplacementMap in="SourceGraphic" in2="n" scale="70" xChannelSelector="R" yChannelSelector="G" result="d"/>
+    <feGaussianBlur in="d" stdDeviation="14"/>
+  </filter>
+</svg>
+
+<script>
+const $=id=>document.getElementById(id);
+const KEY="imanokotoba-seen";
+function loadSeen(){try{return JSON.parse(localStorage.getItem(KEY)||"[]")}catch(e){return[]}}
+function saveSeen(a){try{localStorage.setItem(KEY,JSON.stringify(a.slice(-600)))}catch(e){}}
+let sample=null,busy=false,DATA=null;
+fetch("kotoba.json").then(r=>r.json()).then(d=>{DATA=d}).catch(()=>{});
+(window.claude?claude.use("sample"):Promise.resolve(null)).then(s=>{sample=s}).catch(()=>{});
+$("mood").addEventListener("input",()=>{$("err").textContent=""});
+const DICT={
+s:["かなし","悲","哀","泣","なみだ","涙","つらい","辛い","失","別れ","わかれ","亡","喪","落ち込","おちこ","へこ","凹","傷","切な","せつな","だめ","ダメ","絶望","むなし","虚し","空し","しょんぼり"],
+l:["さみし","さびし","寂","淋","ひとり","一人","独り","孤独","こどく","誰も","だれも","置いていかれ","取り残"],
+a:["不安","ふあん","心配","しんぱい","焦","あせ","そわそわ","どきどき","ドキドキ","緊張","きんちょう","怖","こわ","恐","落ち着か","おちつか","間に合","締め切","しめきり","忙","いそが","追われ","プレッシャー","もやもや","モヤモヤ","ざわざわ"],
+t:["疲","つかれ","だる","ねむ","眠","休みた","やすみた","ぐったり","しんど","限界","へとへと","くたくた","何もしたくな","なにもしたくな","やる気が出な","やる気でな","消耗","ぼーっと"],
+i:["怒","いらいら","イライラ","むかつ","ムカつ","腹が立","腹立","はらがた","許せ","ゆるせ","くやし","悔し","むしゃくしゃ","うざ","嫌い","きらい","憎","にくい","ぶつけ"],
+m:["迷","まよ","わからな","分からな","悩","なや","どうしよう","決められ","きめられ","選べ","えらべ","答え","こたえ","意味","何がしたい","なにがしたい","ぼんやり","モヤ","もや","どうすれば","自分らし","じぶんらし"],
+h:["うれし","嬉","楽し","たのし","わくわく","ワクワク","幸せ","しあわせ","よかった","良かった","最高","さいこう","笑","わらっ","ごきげん","気分がいい","晴れ晴れ","はればれ","ルンルン"],
+c:["静か","しずか","おだやか","穏","のんびり","ゆったり","落ち着い","おちつい","ほっと","ホッと","平和","へいわ","まったり","リラックス","すっきり","澄","ふつう","普通","まあまあ","凪"],
+k:["好き","すき","恋","こい","会いたい","あいたい","逢い","愛し","いとし","大好き","片思い","かたおもい","あの人","あのひと","彼氏","彼女","デート","ときめ","どきっと","思い出してしまう"],
+n:["なつかし","懐","思い出","おもいで","昔","むかし","ふるさと","故郷","実家","子どもの頃","こどものころ","子供の頃","あの頃","あのころ","帰りたい","かえりたい","香り","かおり","におい","匂"],
+g:["がんば","頑張","やる気","挑戦","ちょうせん","はじめ","始め","初め","新しい","あたらし","スタート","目標","もくひょう","前向き","まえむき","決意","明日","あした","これから","一歩","いっぽ","勇気","ゆうき","わくわく"],
+r:["ありがと","感謝","かんしゃ","おかげ","恵ま","めぐま","支え","ささえ","大切","たいせつ","ありがたい","助けられ","たすけられ"]
+};
+const WHY={
+s:"「{w}」ということばに、かなしみがにじんでいました。急いで消そうとせず、そのかなしみのそばに並んでくれることばを選びました。",
+l:"「{w}」と書いたあなたへ。ひとりの時間を、そのまま抱きしめてくれるようなことばです。",
+a:"「{w}」という気持ちが伝わってきました。ひと呼吸おいて、足もとに戻ってこられるように、このことばを。",
+t:"「{w}」と書いたあなたへ。がんばるより先に、休んでいいと言ってくれることばです。",
+i:"「{w}」という強い気持ちを感じました。その熱を、少しだけ遠くからながめられることばを。",
+m:"「{w}」ということばに、迷いを感じました。答えではなく、迷いのそばにいてくれることばを選びました。",
+h:"「{w}」というよろこびが伝わってきました。そのうれしさに、もうひとつ花をそえることばを。",
+c:"「{w}」という、おだやかな気配を感じました。その静けさに、そっと耳をすますようなことばを。",
+k:"「{w}」ということばに、だれかを思う気持ちがありました。昔の人も、同じように胸を焦がしていました。",
+n:"「{w}」ということばに、なつかしさを感じました。遠い記憶にそっとふれることばを選びました。",
+g:"「{w}」ということばに、前へ進もうとする力を感じました。その一歩を照らすことばを。",
+r:"「{w}」ということばに、あたたかな感謝を感じました。その気持ちにふさわしいことばを。"
+};
+const NOWHY="書いてくれた気持ちには、まだ名前がないのかもしれません。名前のないまま、今日のあなたに届いたことばです。";
+const PAL={s:["#7f9cc4","#a9b8d6","#c7cbe0"],l:["#8aa3b8","#b9c6d3","#d9d2c4"],a:["#e0b46c","#c9d6a3","#9fc5c9"],t:["#b7a9c9","#d6c7d9","#c9d4c1"],i:["#e08a6c","#e9b98a","#d4a3a8"],m:["#9bb7a8","#c5c9a4","#b7b0cf"],h:["#f2b24c","#f0a3a3","#f5d36b"],c:["#8fc1b5","#b8d8c7","#d9e4c4"],k:["#e79bb0","#f2c1c8","#c9a6d6"],n:["#d9a46c","#e8c79a","#c4b49c"],g:["#7fc28f","#9fd0e0","#f0d27a"],r:["#f0b48a","#f3d08f","#e8a9a0"]};
+function localPick(mood){
+  const score={},hit={};
+  for(const c in DICT){for(const w of DICT[c]){if(mood.includes(w)){score[c]=(score[c]||0)+1;if(!hit[c]||w.length>hit[c].length)hit[c]=w;}}}
+  let seen=loadSeen();
+  let pool=DATA.filter(d=>!seen.includes(d.t));
+  if(!pool.length){seen=[];saveSeen(seen);pool=DATA.slice();}
+  const has=Object.keys(score).length>0;
+  let pick;
+  if(has){
+    const sc=pool.map(d=>{let v=0;d.g.forEach((g,i)=>{if(score[g])v+=score[g]*(i===0?1.5:1)});return v});
+    const max=Math.max(...sc);
+    if(max>0){
+      const ws=sc.map(v=>v>0?v*v:0),tot=ws.reduce((a,b)=>a+b,0);
+      let r=Math.random()*tot;for(let i=0;i<pool.length;i++){r-=ws[i];if(r<=0){pick=pool[i];break}}
+      pick=pick||pool[sc.indexOf(max)];
+    }
+  }
+  if(!pick)pick=pool[Math.floor(Math.random()*pool.length)];
+  let top=null;
+  for(const g of pick.g){if(score[g]&&(!top||score[g]>score[top]))top=g}
+  if(!top&&has)top=Object.keys(score).sort((a,b)=>score[b]-score[a])[0];
+  const q=mood.replace(/\s+/g," ").length>26?mood.replace(/\s+/g," ").slice(0,24)+"…":mood.replace(/\s+/g," ");
+  const why=top?WHY[top].replace("{w}",q):NOWHY;
+  const col=PAL[top||pick.g[0]]||PAL.c;
+  return {type:pick.k,text:pick.t,reading:pick.r,source:pick.s,meaning:pick.m,english:pick.e,why,colors:col};
+}
+function esc(s){return String(s||"").replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]))}
+function hex(c,f){return /^#[0-9a-fA-F]{6}$/.test(c||"")?c:f}
+function wash(colors){
+  const cs=[hex(colors[0],"#9fb8d8"),hex(colors[1],"#e7b9c4"),hex(colors[2],"#cfe0c3")];
+  const r=()=>Math.random();
+  let blobs="";
+  const spots=[[15+r()*25,10+r()*20,36],[65+r()*20,15+r()*25,32],[25+r()*45,65+r()*25,40],[80,85,26]];
+  spots.forEach((p,i)=>{blobs+=`<ellipse cx="${p[0]}%" cy="${p[1]}%" rx="${p[2]}%" ry="${(p[2]*(0.7+r()*0.4)).toFixed(1)}%" fill="${cs[i%3]}" opacity="${(0.28+r()*0.14).toFixed(2)}"/>`;});
+  return `<svg class="wash" aria-hidden="true" preserveAspectRatio="none"><g filter="url(#wc)">${blobs}</g></svg>`;
+}
+function render(d){
+  const waka=d.type==="和歌";
+  $("stage").innerHTML=`<article class="card" id="card">${wash(d.colors||[])}<div class="body">
+    <p class="kind">${waka?"和 歌":"禅 語"}</p>
+    <p class="phrase${waka?" waka":""}">${esc(d.text)}</p>
+    <p class="reading">${esc(d.reading)}</p>
+    <p class="source">${esc(d.source)}</p>
+    <hr>
+    <p class="meaning">${esc(d.meaning)}</p>
+    <p class="english">${esc(d.english)}</p>
+    <p class="why"><b>このことばを選んだわけ</b>${esc(d.why)}</p>
+    <p class="once">一期一会 — このことばは、もう来ません</p>
+  </div></article><button class="again" id="again" type="button">もう一度、書いてみる</button>`;
+  requestAnimationFrame(()=>requestAnimationFrame(()=>$("card").classList.add("show")));
+  $("again").onclick=()=>{$("mood").value="";$("stage").innerHTML="";$("mood").focus();window.scrollTo({top:0,behavior:"smooth"});};
+}
+async function aiPick(mood){
+  const seen=loadSeen();
+  const prompt=`あなたは禅語と和歌に深く通じた書家です。次の「いまの気持ち」を読み、その人にそっと寄りそう、実在する禅語または和歌をひとつだけ選んでください。
+
+いまの気持ち:
+"""${mood}"""
+
+ルール:
+- 実在し、出典が確かなものだけを選ぶ。存在しない句を作らない。少しでも不確かなら、確実に知っているものに替える。
+- 禅語なら出典（例: 碧巌録、臨済録、禅林句集）がわかれば書く。わからなければ「禅語」とだけ書く。
+- 和歌なら作者と出典（例: 古今和歌集、新古今和歌集、万葉集、百人一首）を必ず書く。和歌は五七五七七の区切りで改行する。
+- 定番ばかりに偏らず、気持ちにいちばん合うものを選ぶ。
+- 次のことばは、この人がすでに受け取ったので選ばない: ${seen.slice(-80).map(s=>s.replace(/\n/g,"")).join(" / ")||"（なし）"}
+- 気持ちに合う、水彩画のようなやわらかい色を3つ、#RRGGBB で選ぶ。
+- 意味は、やさしい日本語で2〜3文。英語訳(english)は、詩として読める自然で美しい釈文に。
+- 「選んだわけ」は、書いた気持ちにやさしく触れながら2文ほどで。説教しない。
+- ランダムさのための値: ${Math.random().toString(36).slice(2,8)}
+
+次のJSONだけを返してください:
+{"type":"禅語" または "和歌","text":"原文","reading":"よみ（ひらがな）","source":"出典や作者","meaning":"意味","english":"English rendering","why":"選んだわけ","colors":["#RRGGBB","#RRGGBB","#RRGGBB"]}`;
+  const d=await sample.json(prompt,{cache:false,modelTier:"default"});
+  if(!d||!d.text)throw new Error("empty");
+  return d;
+}
+$("f").addEventListener("submit",async e=>{
+  e.preventDefault();
+  if(busy)return;
+  const mood=$("mood").value.trim();
+  if(!mood){$("err").textContent="気持ちをひとことでも書いてください";return;}
+  if(!DATA&&!sample){$("err").textContent="少し待ってから、もう一度どうぞ";return;}
+  busy=true;$("go").disabled=true;
+  $("stage").innerHTML='<p class="waiting"><span>ことばを聞いています</span></p>';
+  let d=null;
+  if(sample){try{d=await aiPick(mood)}catch(err){d=null}}
+  if(!d&&DATA){await new Promise(r=>setTimeout(r,1400));d=localPick(mood);}
+  if(d){const seen=loadSeen();seen.push(d.text);saveSeen(seen);render(d);}
+  else $("stage").innerHTML='<p class="unavail">ことばが届きませんでした。もう一度どうぞ</p>';
+  busy=false;$("go").disabled=false;
+});
+</script>
+</body>
+</html>
