@@ -80,7 +80,8 @@ const KEY="imanokotoba-seen";
 function loadSeen(){try{return JSON.parse(localStorage.getItem(KEY)||"[]")}catch(e){return[]}}
 function saveSeen(a){try{localStorage.setItem(KEY,JSON.stringify(a.slice(-600)))}catch(e){}}
 let sample=null,busy=false,DATA=null;
-fetch("kotoba.json").then(r=>r.json()).then(d=>{DATA=d}).catch(()=>{});
+const BASE=(p=>p.endsWith("/")?p:(/\.[a-z]+$/i.test(p)?p.replace(/[^/]*$/,""):p+"/"))(location.pathname);
+fetch(BASE+"kotoba.json").then(r=>r.json()).then(d=>{DATA=d}).catch(()=>{});
 (window.claude?claude.use("sample"):Promise.resolve(null)).then(s=>{sample=s}).catch(()=>{});
 $("mood").addEventListener("input",()=>{$("err").textContent=""});
 const DICT={
