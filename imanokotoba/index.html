@@ -49,6 +49,17 @@ hr{border:0;border-top:1px solid var(--line);width:40px;margin:0 auto 24px}
 @keyframes breathe{0%,100%{opacity:.25}50%{opacity:1}}
 .again{display:block;margin:22px auto 0;background:none;border:0;color:var(--sub);font-size:13px;letter-spacing:.15em;text-decoration:underline;text-underline-offset:4px}
 .unavail{text-align:center;font-size:13px;color:var(--sub);line-height:1.8}
+.ai-link{align-self:center;background:none;border:0;color:var(--sub);font-size:12px;letter-spacing:.12em;text-decoration:underline;text-underline-offset:4px;padding:4px}
+dialog{border:1px solid var(--line);border-radius:18px;padding:28px 24px 22px;max-width:400px;width:calc(100% - 40px);background:var(--card);color:var(--ink)}
+dialog::backdrop{background:rgba(42,39,36,.35)}
+dialog h2{font-family:"Shippori Mincho",serif;font-weight:400;font-size:18px;letter-spacing:.15em;margin:0 0 16px;text-align:center}
+dialog ol,dialog p{font-size:14px;line-height:1.9;margin:0 0 12px}
+dialog ol{padding-left:1.3em}
+dialog .note{font-size:12px;color:var(--sub)}
+.dlg-btns{display:flex;flex-direction:column;align-items:center;gap:10px;margin-top:18px}
+.dlg-btns a{border:1px solid var(--ink);color:var(--ink);text-decoration:none;padding:9px 26px;border-radius:999px;font-size:14px;letter-spacing:.12em}
+.dlg-btns button{background:none;border:0;color:var(--sub);font-size:13px;letter-spacing:.15em;text-decoration:underline;text-underline-offset:4px}
+.by{text-align:center;font-size:10px;color:#b3ada6;letter-spacing:.2em;margin:6px 0 0}
 </style>
 </head>
 <body>
@@ -62,9 +73,35 @@ hr{border:0;border-top:1px solid var(--line);width:40px;margin:0 auto 24px}
     <textarea id="mood" placeholder="なんとなく、そわそわして落ち着かない" aria-label="いまの気持ち"></textarea>
     <p class="err" id="err" role="alert"></p>
     <button class="go" id="go" type="submit">ことばを聞く</button>
+    <button class="ai-link" id="ailink" type="button">AIに選んでもらうには</button>
   </form>
   <section class="stage" id="stage" aria-live="polite"></section>
 </main>
+
+<dialog id="dlg" aria-labelledby="dlgt">
+  <div id="dlg-local">
+    <h2 id="dlgt">AIに選んでもらうには</h2>
+    <p>いまは、登録してある禅語300・和歌244の中から、書いたことばを手がかりにひとつ選んでいます。</p>
+    <p>AIに気持ちを読みとって選んでもらうには:</p>
+    <ol>
+      <li>Claude（claude.ai）にログインする</li>
+      <li>下のボタンから、Claude版の一転語を開く</li>
+      <li>はじめて「ことばを聞く」を押すと、AIを使ってよいか確認が出るので、許可する</li>
+    </ol>
+    <p class="note">書いた気持ちは、ことば選びのためだけにAIへ送られます。</p>
+    <div class="dlg-btns">
+      <a href="https://claude.ai/artifact/BqCxTGmHvTe69o2oG18rNB" target="_blank" rel="noopener">Claude版を開く ↗</a>
+      <button type="button" data-close>閉じる</button>
+    </div>
+  </div>
+  <div id="dlg-ai" hidden>
+    <h2>AIが選んでいます</h2>
+    <p>いまは、あなたが書いた気持ちをAIが読みとって、禅語や和歌の中からひとつ選んでいます。</p>
+    <p>はじめて「ことばを聞く」を押したときに、AIを使ってよいか確認が出ます。許可しなかったときや、AIが使えないときは、登録してある禅語300・和歌244の中から選びます。</p>
+    <p class="note">AIは、まれに読みや出典をまちがえることがあります。書いた気持ちは、ことば選びのためだけにAIへ送られます。</p>
+    <div class="dlg-btns"><button type="button" data-close>閉じる</button></div>
+  </div>
+</dialog>
 
 <svg width="0" height="0" style="position:absolute" aria-hidden="true">
   <filter id="wc" x="-20%" y="-20%" width="140%" height="140%">
@@ -82,7 +119,10 @@ function saveSeen(a){try{localStorage.setItem(KEY,JSON.stringify(a.slice(-600)))
 let sample=null,busy=false,DATA=null;
 const BASE=(p=>p.endsWith("/")?p:(/\.[a-z]+$/i.test(p)?p.replace(/[^/]*$/,""):p+"/"))(location.pathname);
 fetch(BASE+"kotoba.json").then(r=>r.json()).then(d=>{DATA=d}).catch(()=>{});
-(window.claude?claude.use("sample"):Promise.resolve(null)).then(s=>{sample=s}).catch(()=>{});
+(window.claude?claude.use("sample"):Promise.resolve(null)).then(s=>{sample=s;if(s)$("ailink").textContent="AIが選んでいます"}).catch(()=>{});
+$("ailink").addEventListener("click",()=>{$("dlg-local").hidden=!!sample;$("dlg-ai").hidden=!sample;const d=$("dlg");if(d.showModal)d.showModal();else d.setAttribute("open","")});
+document.querySelectorAll("[data-close]").forEach(b=>b.addEventListener("click",()=>{const d=$("dlg");if(d.close)d.close();else d.removeAttribute("open")}));
+$("dlg").addEventListener("click",e=>{if(e.target===$("dlg"))$("dlg").close()});
 $("mood").addEventListener("input",()=>{$("err").textContent=""});
 const DICT={
 s:["かなし","悲","哀","泣","なみだ","涙","つらい","辛い","失","別れ","わかれ","亡","喪","落ち込","おちこ","へこ","凹","傷","切な","せつな","だめ","ダメ","絶望","むなし","虚し","空し","しょんぼり"],
@@ -161,7 +201,7 @@ function render(d){
     <p class="meaning">${esc(d.meaning)}</p>
     <p class="english">${esc(d.english)}</p>
     <p class="why"><b>このことばを選んだわけ</b>${esc(d.why)}</p>
-    <p class="once">一期一会 — このことばは、もう来ません</p>
+    <p class="once">一期一会 — このことばは、もう来ません</p>${d.ai?'<p class="by">AIが選びました</p>':''}
   </div></article><button class="again" id="again" type="button">もう一度、書いてみる</button>`;
   requestAnimationFrame(()=>requestAnimationFrame(()=>$("card").classList.add("show")));
   $("again").onclick=()=>{$("mood").value="";$("stage").innerHTML="";$("mood").focus();window.scrollTo({top:0,behavior:"smooth"});};
@@ -188,7 +228,7 @@ async function aiPick(mood){
 {"type":"禅語" または "和歌","text":"原文","reading":"よみ（ひらがな）","source":"出典や作者","meaning":"意味","english":"English rendering","why":"選んだわけ","colors":["#RRGGBB","#RRGGBB","#RRGGBB"]}`;
   const d=await sample.json(prompt,{cache:false,modelTier:"default"});
   if(!d||!d.text)throw new Error("empty");
-  return d;
+  d.ai=true;return d;
 }
 $("f").addEventListener("submit",async e=>{
   e.preventDefault();
